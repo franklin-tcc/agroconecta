@@ -180,7 +180,7 @@ const ready = new Promise((resolve, reject) => {
         FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
       )`);
       await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_normalized
-        ON Usuarios(lower(trim(email))) WHERE email IS NOT NULL AND trim(email) <> ""`);
+        ON Usuarios(lower(trim(email))) WHERE email IS NOT NULL AND trim(email) <> ''`);
       await run(`CREATE TABLE IF NOT EXISTS AuthSessions (
         token_hash TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL,
         expires_at INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
