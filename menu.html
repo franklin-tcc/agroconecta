@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgroConecta - Registro de Productor</title>
+    <link rel="stylesheet" href="estilos2.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+</head>
+<body>
+
+    <div class="registro-card">
+        <a class="back-to-site" href="index.html">← Volver a AgroConecta</a>
+        <!-- Encabezado -->
+        <header class="header-elegante">
+            <div class="brand-logo">
+                <span class="logo-icon" aria-hidden="true">A</span>
+                <h1>AgroConecta</h1>
+            </div>
+            <p class="subtitulo">Registro Oficial de Productores Agrícolas</p>
+
+            <!-- Stepper Visual -->
+            <div class="stepper-bar">
+                <div class="step-item active" id="step-1"></div>
+                <div class="step-line"></div>
+                <div class="step-item" id="step-2"></div>
+                <div class="step-line"></div>
+                <div class="step-item" id="step-3"></div>
+            </div>
+        </header>
+
+        <form id="form-agricultor" onsubmit="procesarRegistro(event)">
+
+            <!-- SECCIÓN 1: DATOS PERSONALES Y SEGURIDAD -->
+            <section class="seccion-paso active" id="paso-1">
+                <div class="form-group">
+                    <label for="nombres">Nombres y Apellidos Completos</label>
+                    <input type="text" id="nombres" placeholder="Ej. Juan Quispe Huamán" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-half">
+                        <label for="dni">DNI</label>
+                        <input type="number" id="dni" placeholder="8 dígitos" required>
+                    </div>
+                    <div class="form-group col-half">
+                        <label for="ruc">RUC <span class="tag-opcional">(Opcional / Ventas al por mayor)</span></label>
+                        <input type="number" id="ruc" placeholder="11 dígitos">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="celular">Celular / WhatsApp</label>
+                    <input type="tel" id="celular" placeholder="Ej. 984123456" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="correo">Correo Electrónico <span class="tag-opcional">(Opcional)</span></label>
+                    <input type="email" id="correo" placeholder="Para comprobantes y acceso a tu cuenta" required>
+                </div>
+
+                <!-- Seguridad y Contraseña con Ojo Toggle -->
+                <div class="box-seguridad">
+                    <div class="form-group">
+                        <label for="password">Crear Contraseña</label>
+                        <div class="input-password-wrapper">
+                            <input type="password" id="password" placeholder="Mínimo 8 caracteres" minlength="8" required>
+                            <button type="button" class="btn-toggle-eye" onclick="togglePasswordVisibility('password', this)" title="Mostrar u ocultar contraseña">Mostrar</button>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirm_password">Confirmar Contraseña</label>
+                        <div class="input-password-wrapper">
+                            <input type="password" id="confirm_password" placeholder="Repite tu contraseña" minlength="8" required>
+                            <button type="button" class="btn-toggle-eye" onclick="togglePasswordVisibility('confirm_password', this)" title="Mostrar u ocultar contraseña">Mostrar</button>
+                        </div>
+                    </div>
+                    
+                    <p class="nota-seguridad">
+                        Tu contraseña se protege en el servidor y no se guarda en texto legible. No reutilices contraseñas. Consulta la <a href="atencion.html?tema=datos" target="_blank" rel="noopener">información de privacidad</a>.
+                    </p>
+                </div>
+
+                <button type="button" class="btn-principal" onclick="siguientePaso(2)">Siguiente</button>
+            </section>
+
+            <!-- SECCIÓN 2: UBICACIÓN Y GEOLOCALIZACIÓN -->
+            <section class="seccion-paso" id="paso-2">
+                <div class="form-group">
+                    <label for="departamento">Departamento</label>
+                    <select id="departamento" onchange="cargarProvincias()" required>
+                        <option value="">Selecciona Departamento</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group col-half">
+                        <label for="provincia">Provincia</label>
+                        <select id="provincia" onchange="cargarDistritos()" required>
+                            <option value="">Selecciona Provincia</option>
+                        </select>
+                    </div>
+                    <div class="form-group col-half">
+                        <label for="distrito">Distrito</label>
+                        <select id="distrito" onchange="actualizarReferenciaMapa()" required>
+                            <option value="">Selecciona Distrito</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="comunidad">Comunidad / Pueblo / Sector <span class="tag-opcional">(Opcional si no figura en la lista)</span></label>
+                    <input type="text" id="comunidad" placeholder="Ej. Anexo Ccollana / Valle Sagrado">
+                </div>
+
+                <div class="form-group">
+                    <label for="farmerMap">Ubicación aproximada del centro de producción</label>
+                    <p class="form-help">Solo se obtendrá si pulsas el botón y autorizas al navegador. No uses la ubicación de tu vivienda.</p>
+                    <div id="farmerMap" class="farmer-map" hidden aria-label="Mapa de ubicación del productor"></div>
+                    <button type="button" class="btn-gps" id="saveFarmerLocation">
+                        Guardar ubicación actual
+                    </button>
+                    <p class="farmer-location-status" id="farmerLocationStatus" role="status" aria-live="polite">La ubicación es opcional; aún no se ha guardado.</p>
+                </div>
+
+                <div class="btn-row">
+                    <button type="button" class="btn-secundario" onclick="siguientePaso(1)">Atrás</button>
+                    <button type="button" class="btn-principal" onclick="siguientePaso(3)">Siguiente</button>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 3: ACTIVIDAD, CULTIVOS COMPLETOS Y ASOCIACIÓN -->
+            <section class="seccion-paso" id="paso-3">
+                <div class="form-group">
+                    <label>¿A qué tipo de cultivos te dedicas?</label>
+                    <div class="categoria-grid">
+                        <label class="categoria-card">
+                            <input type="checkbox" value="verduras" onchange="renderizarCultivos()">
+                            <span>Verduras / Hortalizas</span>
+                        </label>
+                        <label class="categoria-card">
+                            <input type="checkbox" value="frutas" onchange="renderizarCultivos()">
+                            <span>Frutas</span>
+                        </label>
+                        <label class="categoria-card">
+                            <input type="checkbox" value="tuberculos" onchange="renderizarCultivos()">
+                            <span>Tubérculos / Raíces</span>
+                        </label>
+                        <label class="categoria-card">
+                            <input type="checkbox" value="granos" onchange="renderizarCultivos()">
+                            <span>Granos / Cereales / Menestras</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Lista Dinámica Masiva de Cultivos Peruanos -->
+                <div id="contenedor-cultivos" class="form-group"></div>
+
+                <div class="form-group">
+                    <button type="button" class="btn-link" onclick="toggleOtroCultivo()">+ Escribir otro cultivo no listado</button>
+                    <div id="box-otro-cultivo" class="oculto">
+                        <input type="text" id="otro_cultivo_input" placeholder="Ej. Aguaymanto, Camu Camu, Capulí...">
+                    </div>
+                </div>
+
+                <!-- Métodos de Cobro -->
+                <div class="form-group">
+                    <label>Métodos de Cobro que Aceptas</label>
+                    <div class="checkbox-row">
+                        <label><input type="checkbox" name="cobro" value="Yape/Plin" checked> Yape / Plin</label>
+                        <label><input type="checkbox" name="cobro" value="Efectivo" checked> Efectivo al entregar</label>
+                        <label><input type="checkbox" name="cobro" value="Transferencia"> Transferencia Bancaria</label>
+                    </div>
+                </div>
+
+                <!-- Asociación y Carga de Carnet -->
+                <div class="form-group">
+                    <label for="asociacion">Asociación o Colectivo Agrícola <span class="tag-opcional">(Opcional)</span></label>
+                    <input type="text" id="asociacion" placeholder="Ej. Asoc. de Productores de Paucartambo">
+                </div>
+
+                <div class="form-group">
+                    <label>Carnet de Socio o Constancia <span class="tag-opcional">(Opcional)</span></label>
+                    <div class="upload-box-elegante">
+                        <input type="file" id="carnet_file" accept="image/*,.pdf" onchange="actualizarNombreArchivo(this)">
+                        <div class="upload-content">
+                            <span class="upload-icon" aria-hidden="true">PDF</span>
+                            <span id="upload-text">Seleccionar constancia (no se enviará al servidor)</span>
+                        </div>
+                    </div>
+                    <p class="form-help">La carga segura de documentos aún no está habilitada. Seleccionar un archivo no lo guarda ni verifica tu identidad.</p>
+                </div>
+
+                <div class="form-group checkbox-row">
+                    <label><input type="checkbox" id="privacidad-productor" required> Acepto que los datos indicados se guarden en la base de datos de AgroConecta para gestionar mi cuenta y he leído la <a href="atencion.html?tema=datos" target="_blank" rel="noopener">información de privacidad</a>.</label>
+                </div>
+
+                <div class="btn-row">
+                    <button type="button" class="btn-secundario" onclick="siguientePaso(2)">Atrás</button>
+                    <button type="submit" class="btn-finalizar">Finalizar Registro</button>
+                </div>
+            </section>
+
+        </form>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="menu.js"></script>
+</body>
+</html>

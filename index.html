@@ -1,0 +1,829 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgroConecta | Del campo a la ciudad</title>
+  <meta name="description" content="AgroConecta conecta productores agrícolas con compradores urbanos de manera directa, justa y confiable." />
+  <link rel="stylesheet" href="estilos.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <a href="https://wa.me/51984000000?text=Hola%20AgroConecta,%20me%20gustar%C3%ADa%20cotizar%20cosechas%20agr%C3%ADcolas%20peruanas." class="whatsapp-float" target="_blank" rel="noreferrer" aria-label="Contactar por WhatsApp">
+    <span class="whatsapp-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.6a8.3 8.3 0 0 1-12.4 7.2L4 20l1.2-3.5A8.3 8.3 0 1 1 20 11.6Z"></path><path d="M8.2 8.1c.3-.6.7-.6 1-.6h.4c.2 0 .4.1.5.4l.7 1.7c.1.2.1.4 0 .6l-.5.7c-.2.2-.2.4 0 .6.4.7 1.1 1.4 1.8 1.8.2.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.6.8c.2.1.4.2.4.4 0 .3-.2 1.1-.7 1.5-.5.5-1.2.7-2 .5-1-.2-2.2-.8-3.4-1.9-1.3-1.2-2.1-2.6-2.3-3.5-.2-.9.1-1.6.6-2Z"></path></svg></span>
+    <span class="whatsapp-text">WhatsApp</span>
+  </a>
+
+  <div id="toast" class="toast"></div>
+
+  <div id="cartModal" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Tu carrito de cosechas</h3>
+        <button type="button" class="close-modal" id="closeCart" aria-label="Cerrar carrito">×</button>
+      </div>
+      <div class="modal-body" id="cartItemsContainer">
+        <p class="empty-cart-msg">Tu carrito está vacío por el momento.</p>
+      </div>
+      <div class="modal-footer">
+        <div class="cart-total-row">
+          <span>Total estimado:</span>
+          <strong id="cartTotal">S/ 0.00</strong>
+        </div>
+        <p class="delivery-note">El costo de transporte se coordina según la zona y el volumen del pedido.</p>
+        <div class="checkout-panel" id="checkoutPanel" hidden>
+          <label for="checkoutAddress">Dirección de entrega para este pedido</label>
+          <input id="checkoutAddress" type="text" maxlength="300" placeholder="Distrito, calle y número" />
+          <label class="checkout-transport"><input id="checkoutTransport" type="checkbox" /> Necesito coordinar transporte</label>
+          <p>La solicitud se enviará a cada agricultor del carrito. No se procesan pagos en línea.</p>
+          <button class="btn btn-primary btn-block" id="checkoutSubmit" type="button">Enviar solicitud de compra</button>
+        </div>
+        <p id="cartRoleNotice" class="delivery-note" hidden>El carrito y las solicitudes de compra están disponibles para cuentas de comprador.</p>
+        <button class="btn btn-primary btn-block" id="cartAccountButton" type="button">Ingresar o crear una cuenta</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="profileModal" class="modal" aria-hidden="true">
+    <div class="modal-content profile-modal-content" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
+      <div class="modal-header">
+        <h3 id="profileTitle">Mis registros</h3>
+        <button type="button" class="close-modal" id="closeProfile" aria-label="Cerrar mis registros">×</button>
+      </div>
+      <div class="modal-body" id="profileList"></div>
+      <div class="modal-body account-access" id="accountAccess">
+        <p class="account-note">Ingresa con el correo y la contraseña de tu cuenta de AgroConecta.</p>
+        <form id="accountLoginForm">
+          <div class="form-group">
+            <label for="loginEmail">Correo electrónico</label>
+            <input id="loginEmail" type="email" autocomplete="username" required />
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Contraseña</label>
+            <div class="password-field">
+              <input id="loginPassword" type="password" autocomplete="current-password" required />
+              <button class="password-toggle" type="button" data-password-toggle="loginPassword" aria-label="Mostrar contraseña">Mostrar</button>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">Ingresar a mi cuenta</button>
+        </form>
+        <button class="link-btn account-forgot" id="forgotPasswordOpen" type="button">Olvidé mi contraseña</button>
+        <form id="forgotPasswordForm" hidden>
+          <div class="form-group">
+            <label for="recoveryChannel">Recibir código por</label>
+            <select id="recoveryChannel">
+              <option value="email">Correo electrónico</option>
+              <option value="whatsapp">WhatsApp</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="forgotIdentifier" id="recoveryIdentifierLabel">Correo de tu cuenta</label>
+            <input id="forgotIdentifier" type="email" autocomplete="email" required />
+          </div>
+          <button class="btn btn-outline-dark btn-block" type="submit">Enviar código de recuperación</button>
+          <button class="link-btn" id="forgotPasswordCancel" type="button">Volver a iniciar sesión</button>
+        </form>
+        <form id="recoveryCodeForm" hidden>
+          <p class="account-note">Escribe el código de seis dígitos que recibiste. Vence en 10 minutos.</p>
+          <div class="form-group">
+            <label for="recoveryCode">Código de verificación</label>
+            <input id="recoveryCode" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required />
+          </div>
+          <button class="btn btn-outline-dark btn-block" type="submit">Verificar código</button>
+          <button class="link-btn" id="verifyRecoveryCodeCancel" type="button">Volver</button>
+        </form>
+        <form id="resetPasswordForm" hidden>
+          <p class="account-note">Crea una contraseña nueva para tu cuenta.</p>
+          <div class="form-group">
+            <label for="newPassword">Nueva contraseña</label>
+            <input id="newPassword" type="password" minlength="8" autocomplete="new-password" required />
+          </div>
+          <div class="form-group">
+            <label for="newPasswordConfirm">Confirma la nueva contraseña</label>
+            <input id="newPasswordConfirm" type="password" minlength="8" autocomplete="new-password" required />
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">Guardar contraseña</button>
+        </form>
+        <div class="account-status" id="accountStatus" role="status" aria-live="polite"></div>
+        <p class="account-disclaimer">La sesión se administra en el servidor. Nunca compartas tu contraseña ni códigos de recuperación.</p>
+        <button class="link-btn" id="accountLogout" type="button" hidden>Cerrar sesión</button>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-block nav-tab" data-tab="tab-contacto" id="createAccountLink" type="button">Crear una cuenta</button>
+      </div>
+    </div>
+  </div>
+
+  <header class="header">
+    <div class="top-bar container">
+      <a href="#" class="logo nav-tab" data-tab="tab-inicio" aria-label="Ir al inicio">
+        <span class="logo-icon" aria-hidden="true">A</span>
+        <div class="logo-text">
+          <span class="brand-name">Agro<span>Conecta</span></span>
+          <small class="tagline">DEL CAMPO A LA CIUDAD</small>
+        </div>
+      </a>
+
+      <div class="search-box-container">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Buscar maíz, palta, papa, quinua..." autocomplete="off" />
+          <button class="search-btn" id="searchBtn" type="button" aria-label="Buscar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 4.5 4.5"></path></svg>
+          </button>
+        </div>
+        <div id="searchResults" class="search-results-dropdown"></div>
+      </div>
+
+      <div class="header-actions">
+        <button class="action-btn" id="openProfileBtn" type="button">
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"></circle><path d="M4.8 20a7.2 7.2 0 0 1 14.4 0"></path></svg></span>
+          <span>Mi cuenta</span>
+        </button>
+        <button class="action-btn cart-btn" id="openCartBtn" type="button">
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 4h2l2.2 11.1a2 2 0 0 0 2 1.6h8.5a2 2 0 0 0 1.9-1.5L21 8H6"></path><circle cx="10" cy="20" r="1"></circle><circle cx="18" cy="20" r="1"></circle></svg></span>
+          <span>Carrito</span>
+          <span class="cart-badge" id="cartCount">0</span>
+        </button>
+      </div>
+    </div>
+
+    <nav class="main-nav" aria-label="Navegación principal">
+      <div class="container nav-wrapper">
+        <div class="menu-toggle" id="menu-toggle" aria-label="Abrir menú" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </div>
+
+        <ul class="nav-menu" id="nav-menu">
+          <li><button class="tab-btn active" data-tab="tab-inicio" type="button">Inicio</button></li>
+          <li><button class="tab-btn" data-tab="tab-catalogo" type="button">Catálogo</button></li>
+          <li><button class="tab-btn" data-tab="tab-nosotros" type="button">Nosotros</button></li>
+          <li id="registerNavItem"><button class="tab-btn" data-tab="tab-contacto" type="button">Registrarse</button></li>
+          <li><button class="tab-btn" data-tab="tab-support" type="button">Soporte</button></li>
+          <li id="dashboardNavItem" hidden><button class="tab-btn nav-tab" data-tab="tab-dashboard" type="button">Mi panel</button></li>
+          <li class="nav-role-entry"><button class="tab-btn nav-tab" data-tab="tab-contacto" data-role="Productor" type="button">Soy agricultor · vender</button></li>
+        </ul>
+
+        <button class="btn btn-seller nav-tab" data-tab="tab-contacto" data-role="Productor" type="button">Soy agricultor · vender</button>
+      </div>
+    </nav>
+  </header>
+
+  <main class="main-content">
+    <section id="tab-inicio" class="tab-content active">
+      <section class="hero-banner">
+        <div class="hero-overlay"></div>
+        <div class="container hero-inner">
+          <div class="hero-badges">
+            <span class="hero-badge">Mercado directo y justo</span>
+            <span class="hero-badge soft">Cusco • Arequipa • Puno</span>
+          </div>
+          <h1>Compra fresca, directa y con origen claro</h1>
+          <p>
+            Facilitamos el contacto entre productores andinos y compradores urbanos. La disponibilidad, el precio,
+            las condiciones del producto y la entrega se acuerdan directamente antes de cada operación.
+          </p>
+          <div class="hero-cta">
+            <button class="btn btn-primary nav-tab" data-tab="tab-catalogo" type="button">Ver catálogo</button>
+            <button class="btn btn-outline nav-tab" data-tab="tab-contacto" data-role="Comprador" type="button">Registro de comprador</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stats-bar container">
+        <div class="stat-box">
+          <strong>03</strong>
+          <span>perfiles: productor, comprador y transportista</span>
+        </div>
+        <div class="stat-box">
+          <strong>Directo</strong>
+          <span>contacto entre las partes para acordar cada operación</span>
+        </div>
+        <div class="stat-box">
+          <strong>Claro</strong>
+          <span>precio, cantidad y condiciones se confirman antes de comprar</span>
+        </div>
+        <div class="stat-box">
+          <strong>Coordinado</strong>
+          <span>entrega y transporte se acuerdan según cada cosecha</span>
+        </div>
+      </section>
+
+      <section class="how-it-works container">
+        <div class="section-title-row">
+          <div>
+            <span class="sub-heading">¿Cómo funciona?</span>
+            <h2>Un canal directo entre campo y ciudad</h2>
+          </div>
+        </div>
+
+        <div class="process-grid">
+          <article class="process-card">
+            <div class="process-number">01</div>
+            <h3>Publican su cosecha</h3>
+            <p>El catálogo presenta productos y zonas de origen; la disponibilidad se confirma directamente con quien los ofrece.</p>
+          </article>
+          <article class="process-card">
+            <div class="process-number">02</div>
+            <h3>Revisan y cotizan</h3>
+            <p>Las partes acuerdan precio, cantidad, estado esperado del producto y fecha antes de cerrar una compra.</p>
+          </article>
+          <article class="process-card">
+            <div class="process-number">03</div>
+            <h3>Coordina transporte</h3>
+            <p>Comprador, productor y transportista coordinan ruta, costo y condiciones para la entrega.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="delivery-section container">
+        <div class="delivery-copy">
+          <span class="sub-heading">Del origen a tu destino</span>
+          <h2>Una entrega coordinada para cada cosecha</h2>
+          <p>Conectamos la disponibilidad del productor con transportistas locales para organizar entregas según la zona, el volumen y el tipo de producto.</p>
+          <button class="btn btn-primary nav-tab" data-tab="tab-contacto" data-role="Distribuidor" type="button">Registrarme como transportista</button>
+        </div>
+        <div class="delivery-steps">
+          <article class="delivery-step">
+            <span>01</span>
+            <div><h3>Indica tu destino</h3><p>El comprador registra su ciudad o zona de entrega.</p></div>
+          </article>
+          <article class="delivery-step">
+            <span>02</span>
+            <div><h3>Coordinamos la ruta</h3><p>Se acuerdan disponibilidad, carga, fecha y costo de transporte.</p></div>
+          </article>
+          <article class="delivery-step">
+            <span>03</span>
+            <div><h3>Entrega coordinada</h3><p>El transportista y el productor organizan el despacho de la cosecha.</p></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="categories-section container">
+        <div class="section-title-row">
+          <div>
+            <span class="sub-heading">Explora el campo</span>
+            <h2>Compra por categorías</h2>
+          </div>
+          <button class="link-btn nav-tab" data-tab="tab-catalogo" type="button">Ver todo →</button>
+        </div>
+
+        <div class="category-circles">
+          <div class="cat-circle" data-categoria="Granos">
+            <div class="cat-icon-bg" aria-hidden="true">GR</div>
+            <p>Granos & cereales</p>
+          </div>
+          <div class="cat-circle" data-categoria="Frutas">
+            <div class="cat-icon-bg" aria-hidden="true">FR</div>
+            <p>Frutas</p>
+          </div>
+          <div class="cat-circle" data-categoria="Tubérculos">
+            <div class="cat-icon-bg" aria-hidden="true">TU</div>
+            <p>Tubérculos</p>
+          </div>
+          <div class="cat-circle" data-categoria="Superalimentos">
+            <div class="cat-icon-bg" aria-hidden="true">SA</div>
+            <p>Superalimentos</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-highlights container">
+        <div class="feature-box">
+          <span class="feature-icon" aria-hidden="true">01</span>
+          <div>
+            <h3>Rutas locales eficientes</h3>
+            <p>Conexión real entre comunidades rurales y consumidores urbanos de la región.</p>
+          </div>
+        </div>
+        <div class="feature-box">
+          <span class="feature-icon" aria-hidden="true">02</span>
+          <div>
+            <h3>Calidad asegurada</h3>
+            <p>Cosechas frescas, seleccionadas y verificadas para una mejor experiencia.</p>
+          </div>
+        </div>
+        <div class="feature-box">
+          <span class="feature-icon" aria-hidden="true">03</span>
+          <div>
+            <h3>Atención directa</h3>
+            <p>Comunicación rápida por WhatsApp, registro y cotización sin intermediarios.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="products-section container">
+        <div class="section-title-row">
+          <div>
+            <span class="sub-heading">Productos frescos</span>
+            <h2>Cosechas destacadas</h2>
+          </div>
+        </div>
+        <div class="product-grid-row" id="destacadosContainer"></div>
+      </section>
+    </section>
+
+    <section id="tab-catalogo" class="tab-content">
+      <div class="container catalog-layout">
+        <aside class="sidebar-filters">
+          <div class="filter-header">
+            <h3>Filtros</h3>
+            <button class="clear-filters-btn" id="resetFiltersBtn" type="button">Limpiar</button>
+          </div>
+
+          <div class="filter-group">
+            <h4>Categorías</h4>
+            <label><input type="checkbox" class="cat-filter" value="Frutas" checked /> Frutas</label>
+            <label><input type="checkbox" class="cat-filter" value="Tubérculos" checked /> Tubérculos & raíces</label>
+            <label><input type="checkbox" class="cat-filter" value="Granos" checked /> Granos & cereales</label>
+            <label><input type="checkbox" class="cat-filter" value="Superalimentos" checked /> Superalimentos</label>
+          </div>
+
+          <div class="filter-group">
+            <h4>Región de origen</h4>
+            <label><input type="checkbox" class="region-filter" value="Sierra" checked /> Sierra</label>
+            <label><input type="checkbox" class="region-filter" value="Costa" checked /> Costa</label>
+            <label><input type="checkbox" class="region-filter" value="Selva" checked /> Selva</label>
+          </div>
+
+          <div class="filter-group">
+            <h4>Modalidad de venta</h4>
+            <label><input type="checkbox" class="tipo-filter" value="Menor" checked /> Venta al menor</label>
+            <label><input type="checkbox" class="tipo-filter" value="Mayor" checked /> Venta al mayor</label>
+          </div>
+
+          <div class="filter-group">
+            <h4>Rango de precio (S/)</h4>
+            <div class="price-inputs">
+              <input type="number" id="minPrice" value="1.00" min="0" step="0.01" placeholder="Mín" />
+              <span>-</span>
+              <input type="number" id="maxPrice" value="900.00" min="0" step="0.01" placeholder="Máx" />
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" id="applyFiltersBtn" type="button">Aplicar filtros</button>
+        </aside>
+
+        <div class="catalog-results">
+          <div class="catalog-header">
+            <div>
+              <h2>Catálogo completo de cosechas del Perú</h2>
+              <p class="results-count" id="resultsCount">Cargando productos...</p>
+            </div>
+            <select class="sort-select" id="sortSelect" aria-label="Ordenar productos">
+              <option value="recientes">Más recientes</option>
+              <option value="precio-asc">Precio: menor a mayor</option>
+              <option value="precio-desc">Precio: mayor a menor</option>
+            </select>
+          </div>
+
+          <div class="product-grid-row" id="catalogoGrid"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-nosotros" class="tab-content">
+      <div class="container">
+        <div class="about-hero">
+          <div class="about-text">
+            <span class="hero-badge light">Quiénes somos</span>
+            <h2>Conectamos al agricultor directamente con tu mesa</h2>
+            <p>
+              AgroConecta es una propuesta de plataforma digital que busca facilitar el contacto entre productores,
+              compradores y transportistas. Promovemos acuerdos directos y una comunicación clara sobre origen,
+              disponibilidad, precio y entrega, respetando las particularidades de cada comunidad agrícola.
+            </p>
+          </div>
+
+          <div class="about-media">
+            <div class="about-principle-card">
+              <span class="about-principle-label">Nuestro modelo</span>
+              <strong>Campo · mercado · transporte</strong>
+              <p>Un espacio para presentar la oferta agrícola y facilitar la coordinación entre quienes producen, compran y trasladan cosechas.</p>
+              <div class="about-principle-line" aria-hidden="true"><span></span><span></span><span></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mvv-grid">
+          <article class="mvv-card">
+            <div class="mvv-icon" aria-hidden="true">01</div>
+            <h3>Misión</h3>
+            <p>Facilitar una comercialización agrícola más directa mediante herramientas accesibles, información clara y coordinación entre productores, compradores y transportistas.</p>
+          </article>
+          <article class="mvv-card">
+            <div class="mvv-icon" aria-hidden="true">02</div>
+            <h3>Visión</h3>
+            <p>Contribuir a un ecosistema agrícola peruano más conectado, donde la tecnología complemente el trabajo de las comunidades y acerque la oferta local a nuevos mercados.</p>
+          </article>
+          <article class="mvv-card">
+            <div class="mvv-icon" aria-hidden="true">03</div>
+            <h3>Valores</h3>
+            <ul class="values-list">
+              <li>Confianza y comunicación responsable</li>
+              <li>Transparencia en precios y condiciones</li>
+              <li>Respeto por el trabajo agrícola</li>
+              <li>Mejora continua en la atención</li>
+            </ul>
+          </article>
+        </div>
+
+        <section class="about-approach">
+          <div class="section-title-row">
+            <div>
+              <span class="sub-heading">Cómo queremos aportar</span>
+              <h2>Una relación comercial más transparente</h2>
+            </div>
+          </div>
+          <div class="approach-grid">
+            <article><span>01</span><h3>Origen visible</h3><p>La información de cada producto debe indicar su procedencia y quién lo ofrece, para que las partes puedan conversar con mayor contexto.</p></article>
+            <article><span>02</span><h3>Acuerdos claros</h3><p>Cantidad, precio, calidad esperada, transporte y fecha de entrega se confirman directamente antes de asumir un compromiso.</p></article>
+            <article><span>03</span><h3>Logística coordinada</h3><p>Productores, compradores y transportistas pueden organizar el traslado según el volumen y las condiciones propias de cada cosecha.</p></article>
+          </div>
+        </section>
+
+        <section class="farmers-section">
+          <div class="section-title-row">
+            <div>
+              <span class="sub-heading">Nuestros socios</span>
+              <h2>Nuestros agricultores destacados</h2>
+              <p class="section-description">Perfiles de presentación para ilustrar cómo se mostraría la oferta de productores en la plataforma.</p>
+            </div>
+          </div>
+
+          <div class="farmers-grid">
+            <div class="farmer-card">
+              <div class="farmer-avatar"></div>
+              <div class="farmer-details">
+                <h4>Juan Quispe</h4>
+                <span class="farmer-badge">Productor de papa</span>
+                <p>Región Sierra (Cusco)</p>
+              </div>
+            </div>
+            <div class="farmer-card">
+              <div class="farmer-avatar"></div>
+              <div class="farmer-details">
+                <h4>María Huamán</h4>
+                <span class="farmer-badge">Productora de frutas</span>
+                <p>Región Costa (Arequipa)</p>
+              </div>
+            </div>
+            <div class="farmer-card">
+              <div class="farmer-avatar"></div>
+              <div class="farmer-details">
+                <h4>Pedro Mamani</h4>
+                <span class="farmer-badge">Productor de granos</span>
+                <p>Región Altiplano (Puno)</p>
+              </div>
+            </div>
+            <div class="farmer-card">
+              <div class="farmer-avatar"></div>
+              <div class="farmer-details">
+                <h4>Rosa Valdez</h4>
+                <span class="farmer-badge">Productora de hortalizas</span>
+                <p>Región Valle Sagrado</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="cta-farmer-banner">
+            <div class="cta-banner-text">
+              <h3>¿Eres agricultor? Publica tu cosecha hoy mismo</h3>
+              <p>Súmate a AgroConecta y vende tu producción directamente con mejor margen.</p>
+            </div>
+            <button class="btn btn-secondary nav-tab" data-tab="tab-contacto" data-role="Productor" type="button">Registrar mi cosecha</button>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="tab-contacto" class="tab-content">
+      <div class="container registration-page">
+        <div class="form-column">
+          <div class="form-card">
+            <h2 id="registrationTitle">Registro de comprador</h2>
+            <p class="form-sub">Crea una cuenta única con tu correo. Después podrás volver a ingresar desde “Mi cuenta”.</p>
+
+            <div class="role-selector" role="group" aria-label="Tipo de registro">
+              <button type="button" class="role-option active" data-role-select="Comprador" aria-pressed="true">Comprador</button>
+              <button type="button" class="role-option" data-role-select="Productor" aria-pressed="false">Agricultor</button>
+              <button type="button" class="role-option" data-role-select="Distribuidor" aria-pressed="false">Transportista</button>
+            </div>
+
+            <form id="registroForm">
+              <input type="hidden" id="rol" name="rol" value="Comprador" />
+              <div class="form-group">
+                <label for="nombre">Nombre completo o empresa</label>
+                <input type="text" id="nombre" placeholder="Ej: Klever Aguilar" required />
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="telefono">Teléfono / WhatsApp</label>
+                  <input type="tel" id="telefono" placeholder="+51 984000000" required />
+                </div>
+                <div class="form-group">
+                  <label for="email">Correo electrónico</label>
+                  <input type="email" id="email" placeholder="ejemplo@correo.com" required />
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="dni_ruc">DNI o RUC</label>
+                  <input type="text" id="dni_ruc" inputmode="numeric" pattern="(?:[0-9]{8}|[0-9]{11})" title="Ingresa un DNI de 8 dígitos o un RUC de 11 dígitos." placeholder="DNI de 8 dígitos o RUC de 11" required />
+                </div>
+                <div class="form-group">
+                  <label for="ubicacion">Ciudad o zona principal</label>
+                  <input type="text" id="ubicacion" placeholder="Ej: Cusco, Perú" required />
+                </div>
+              </div>
+
+              <div id="buyerFields" class="role-fields">
+                <h3>Datos para una cuenta confiable</h3>
+                <div class="form-group">
+                  <label for="direccionEntrega">Dirección habitual de entrega</label>
+                  <input type="text" id="direccionEntrega" name="direccionEntrega" placeholder="Distrito, calle y número" required />
+                </div>
+              </div>
+
+              <div id="transportFields" class="role-fields" hidden>
+                <h3>Datos del servicio de transporte</h3>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="vehiculo">Tipo de vehículo</label>
+                    <select id="vehiculo" name="vehiculo">
+                      <option value="">Selecciona el vehículo</option>
+                      <option>Motocarga</option><option>Camioneta</option><option>Furgón</option><option>Camión</option><option>Camión refrigerado</option><option>Otro</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="capacidad">Capacidad de carga</label>
+                    <input type="text" id="capacidad" name="capacidad" placeholder="Ej: 2 toneladas" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="placaVehiculo">Placa del vehículo</label>
+                    <input type="text" id="placaVehiculo" name="placaVehiculo" placeholder="Ej: ABC-123" />
+                  </div>
+                  <div class="form-group">
+                    <label for="licenciaNumero">Número de licencia de conducir</label>
+                    <input type="text" id="licenciaNumero" name="licenciaNumero" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="licenciaCategoria">Categoría de licencia</label>
+                    <input type="text" id="licenciaCategoria" name="licenciaCategoria" placeholder="Ej: A-IIb" />
+                  </div>
+                  <div class="form-group">
+                    <label for="licenciaVencimiento">Vencimiento de licencia</label>
+                    <input type="date" id="licenciaVencimiento" name="licenciaVencimiento" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label for="zonasServicio">Zonas o rutas que atiendes</label>
+                  <input type="text" id="zonasServicio" name="zonasServicio" placeholder="Ej: Cusco, Urubamba y Calca" />
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="soatVigente">SOAT vigente</label>
+                    <select id="soatVigente" name="soatVigente"><option value="">Selecciona</option><option value="Sí">Sí</option><option value="No">No</option></select>
+                  </div>
+                  <div class="form-group">
+                    <label for="revisionTecnica">Revisión técnica vigente</label>
+                    <select id="revisionTecnica" name="revisionTecnica"><option value="">Selecciona</option><option value="Sí">Sí</option><option value="No">No</option></select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="licenciaFrontal">Licencia: lado frontal</label>
+                    <input type="file" id="licenciaFrontal" name="licenciaFrontal" accept="image/*,.pdf" />
+                  </div>
+                  <div class="form-group">
+                    <label for="licenciaPosterior">Licencia: lado posterior</label>
+                    <input type="file" id="licenciaPosterior" name="licenciaPosterior" accept="image/*,.pdf" />
+                  </div>
+                </div>
+                <p class="form-help">Los documentos adjuntos se validan en este prototipo, pero no se transmiten ni guardan en un servidor. No subas documentos reales hasta que exista un canal seguro de verificación.</p>
+              </div>
+
+              <div class="form-group password-form-group">
+                <label for="passwordRegistro">Crear contraseña</label>
+                <div class="password-field">
+                  <input type="password" id="passwordRegistro" autocomplete="new-password" minlength="8" required />
+                  <button class="password-toggle" type="button" data-password-toggle="passwordRegistro" aria-label="Mostrar contraseña">Mostrar</button>
+                </div>
+                <small>Usa al menos 8 caracteres. No reutilices la contraseña de otros servicios.</small>
+              </div>
+              <div class="form-group password-form-group">
+                <label for="confirmarPasswordRegistro">Confirmar contraseña</label>
+                <div class="password-field">
+                  <input type="password" id="confirmarPasswordRegistro" autocomplete="new-password" minlength="8" required />
+                  <button class="password-toggle" type="button" data-password-toggle="confirmarPasswordRegistro" aria-label="Mostrar contraseña">Mostrar</button>
+                </div>
+              </div>
+
+              <div class="form-group checkbox-group">
+                <label>
+                  <input type="checkbox" id="aceptaPrivacidad" required /> Consiento que los datos indicados se usen para gestionar mi registro. He leído la <a href="atencion.html?tema=datos" target="_blank" rel="noopener">información de privacidad</a> y los <a href="atencion.html?tema=terminos" target="_blank" rel="noopener">términos y condiciones</a>.
+                </label>
+              </div>
+              <p class="form-help">La contraseña se protege en el servidor y nunca se guarda como texto legible. Los archivos de licencia no se cargan en esta versión.</p>
+
+              <div class="form-buttons">
+                <button type="submit" class="btn btn-primary btn-block" id="btnSubmit">
+                  <span class="btn-text">Crear registro</span>
+                  <span class="spinner" hidden></span>
+                </button>
+                <button type="reset" class="btn btn-outline-dark">Limpiar</button>
+              </div>
+            </form>
+          </div>
+          <div class="form-card farmer-embed-card" id="farmerRegistrationPanel" hidden>
+            <h2>Registro de agricultor</h2>
+            <p class="form-sub">Completa las tres fases del formulario agrícola aquí mismo; el registro permanece en esta sección.</p>
+            <iframe id="farmerRegistrationFrame" src="menu.html?embedded=1" title="Registro de agricultor en tres fases" loading="lazy"></iframe>
+          </div>
+          <div class="registration-trust" id="registrationTrust">
+            <h3>Un registro claro y responsable</h3>
+            <p>Solicitamos los datos necesarios para identificar la cuenta y coordinar las entregas. Nunca compartas tu contraseña por correo, teléfono o mensajería.</p>
+          </div>
+        </div>
+
+        <div class="info-column">
+          <div class="info-card">
+            <h3>Atención AgroConecta</h3>
+            <div class="contact-detail-list">
+              <p><strong>WhatsApp:</strong> +51 984000000</p>
+              <p><strong>Correo:</strong> contacto@agroconecta.pe</p>
+              <p>Escríbenos por los canales publicados para consultas sobre perfiles, productos y coordinación.</p>
+              <p><a href="atencion.html?tema=envios">Consulta información de envío</a></p>
+            </div>
+          </div>
+
+          <div class="faq-card">
+            <h3>Preguntas frecuentes</h3>
+            <details class="faq-item" open>
+              <summary>¿Cómo funciona AgroConecta?</summary>
+              <p>Conectamos directamente a los productores agrícolas locales con compradores finales de la ciudad, eliminando sobrecostos e intermediarios.</p>
+            </details>
+            <details class="faq-item">
+              <summary>¿Qué productos puedo publicar?</summary>
+              <p>Todo cultivo agrícola fresco como maíz, palta, papa nativa, quinua, frutas y hortalizas originarias del Perú.</p>
+            </details>
+            <details class="faq-item">
+              <summary>¿Cómo se realiza el pago?</summary>
+              <p>Puedes cotizar directamente en la plataforma y acordar transferencias seguras o pagos a la entrega del lote.</p>
+            </details>
+            <details class="faq-item">
+              <summary>¿Puedo cancelar un pedido?</summary>
+              <p>Sí, las solicitudes pueden cancelarse o reprogramarse notificando antes del despacho en origen.</p>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-dashboard" class="tab-content">
+      <div class="container dashboard-page">
+        <div class="dashboard-heading">
+          <div><span class="sub-heading">Mi AgroConecta</span><h2 id="dashboardTitle">Panel de cuenta</h2></div>
+          <button class="btn btn-outline-dark" id="dashboardRefresh" type="button">Actualizar panel</button>
+        </div>
+        <div id="userDashboard" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section id="tab-support" class="tab-content">
+      <div class="container support-center-page">
+        <div class="support-center-intro">
+          <span class="sub-heading">Estamos para orientarte</span>
+          <h2>Soporte AgroConecta</h2>
+          <p>Cuéntanos qué necesitas hacer. El asistente orienta sobre AgroConecta; si no puede resolverlo, abre una conversación para que el administrador responda en el mismo chat.</p>
+        </div>
+        <div class="support-center-grid">
+          <article class="info-card">
+            <h3>Enviar una consulta</h3>
+            <form id="supportTicketForm">
+              <div class="form-group">
+                <label for="supportSubject">Asunto</label>
+                <input id="supportSubject" type="text" maxlength="160" required placeholder="Ej.: No puedo actualizar una cosecha" />
+              </div>
+              <div class="form-group">
+                <label for="supportEmail">Correo de respuesta (si no has iniciado sesión)</label>
+                <input id="supportEmail" type="email" autocomplete="email" />
+              </div>
+              <div class="form-group">
+                <label for="supportMessage">Detalle</label>
+                <textarea id="supportMessage" rows="5" maxlength="1800" required placeholder="Describe qué estabas haciendo y qué ocurrió. No incluyas contraseñas ni datos bancarios."></textarea>
+              </div>
+              <button class="btn btn-primary" type="submit">Enviar a soporte</button>
+            </form>
+            <p class="support-ticket-status" id="supportTicketStatus" role="status" aria-live="polite"></p>
+          </article>
+          <article class="faq-card">
+            <h3>Cómo se gestiona tu consulta</h3>
+            <ol class="support-steps">
+              <li>El asistente intenta orientar sobre cuentas, compras, publicaciones, entregas y chats.</li>
+              <li>Si no puede resolverlo, tu consulta se guarda en una conversación privada de soporte.</li>
+              <li>El administrador ve la consulta en <a href="admin.html">la bandeja privada</a> y puede responder en el mismo hilo. El chat se actualiza mientras ambas páginas están abiertas.</li>
+            </ol>
+            <p class="form-help">El asistente usa respuestas temáticas de AgroConecta; no es una IA generativa. No envíes documentos personales, claves ni códigos de seguridad.</p>
+            <p class="form-help"><a href="admin.html">Acceso a la bandeja administrativa de soporte</a></p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div class="footer-col">
+        <a href="#" class="logo text-white nav-tab" data-tab="tab-inicio">
+          <span class="logo-icon" aria-hidden="true">A</span>
+          <div class="logo-text">
+            <span class="brand-name">Agro<span>Conecta</span></span>
+          </div>
+        </a>
+        <p class="footer-tag">DEL CAMPO A LA CIUDAD</p>
+        <p class="footer-desc">Plataforma digital para el comercio justo y directo de cosechas peruanas.</p>
+      </div>
+
+      <div class="footer-col">
+        <h4>Navegación</h4>
+        <ul>
+          <li><a href="#" class="nav-tab" data-tab="tab-inicio">Inicio</a></li>
+          <li><a href="#" class="nav-tab" data-tab="tab-catalogo">Catálogo</a></li>
+          <li><a href="#" class="nav-tab" data-tab="tab-nosotros">Nosotros</a></li>
+          <li><a href="#" class="nav-tab" data-tab="tab-contacto">Registros</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Ayuda</h4>
+        <ul>
+          <li><a href="#tab-support" class="nav-tab" data-tab="tab-support">Centro de ayuda</a></li>
+          <li><a href="#tab-support" class="nav-tab" data-tab="tab-support">Preguntas frecuentes</a></li>
+          <li><a href="atencion.html?tema=proteccion">Protección de compras AgroConecta</a></li>
+          <li><a href="atencion.html?tema=datos">Información de privacidad</a></li>
+          <li><a href="atencion.html?tema=terminos">Términos y condiciones</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Atención al cliente</h4>
+        <ul>
+          <li><a href="atencion.html?tema=devoluciones">Devolución y reembolso</a></li>
+          <li><a href="atencion.html?tema=propiedad">Propiedad intelectual</a></li>
+          <li><a href="atencion.html?tema=envios">Información de envío</a></li>
+          <li><a href="atencion.html?tema=actividad">Reportar actividad sospechosa</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Suscríbete</h4>
+        <p>Recibe novedades y ofertas del campo en tu correo:</p>
+        <form class="newsletter-form" id="newsletterForm">
+          <input type="email" placeholder="Tu correo electrónico" required />
+          <button type="submit" class="btn btn-secondary">Suscribirme</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div class="container">
+        <p>© 2026 AgroConecta. Todos los derechos reservados.</p>
+      </div>
+    </div>
+  </footer>
+
+  <div class="support-chat" id="supportChat">
+    <button class="support-chat-toggle" id="supportChatToggle" type="button" aria-expanded="false" aria-controls="supportChatPanel">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-5 4v-4.6A2.5 2.5 0 0 1 4 13.5z"></path><path d="M8 8h8M8 12h5"></path></svg>
+      <span>Asistente de ayuda</span>
+    </button>
+    <section class="support-chat-panel" id="supportChatPanel" aria-label="Asistente de ayuda" hidden>
+      <div class="chat-heading">
+        <div><strong>Asistente AgroConecta</strong><small>Respuestas sobre el uso de la plataforma</small></div>
+        <button type="button" id="supportChatClose" aria-label="Cerrar asistente">×</button>
+      </div>
+      <div class="chat-messages" id="supportChatMessages" aria-live="polite">
+        <p class="chat-message assistant">Hola. Puedo orientarte sobre compras, envíos, registros, devoluciones y seguridad. Si no reconozco tu consulta, te indicaré cómo contactar a una persona.</p>
+      </div>
+      <form class="chat-form" id="supportChatForm">
+        <label class="sr-only" for="supportChatInput">Escribe tu consulta</label>
+        <input id="supportChatInput" type="text" maxlength="500" placeholder="Escribe tu consulta..." autocomplete="off" required />
+        <button type="submit" aria-label="Enviar consulta">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-8-7 18-3-7z"></path><path d="m11 14 5-5"></path></svg>
+        </button>
+      </form>
+      <p class="chat-disclaimer">Asistente automatizado con respuestas informativas; no procesa pagos ni pedidos.</p>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
