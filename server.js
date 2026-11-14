@@ -62,6 +62,16 @@ function remoteExecutor() {
   return transactionContext.getStore() || tursoClient;
 }
 
+function normalizeRow(row) {
+  if (!row || typeof row !== 'object') return row;
+  const plain = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (/^\d+$/.test(key)) continue;
+    plain[key] = typeof value === 'bigint' ? Number(value) : value;
+  }
+  return plain;
+}
+
 function run(sql, params = []) {
   if (tursoClient) {
     return remoteExecutor().execute({ sql, args: params }).then(result => ({
@@ -79,7 +89,7 @@ function run(sql, params = []) {
 
 function get(sql, params = []) {
   if (tursoClient) {
-    return remoteExecutor().execute({ sql, args: params }).then(result => result.rows[0]);
+    return remoteExecutor().execute({ sql, args: params }).then(result => normalizeRow(result.rows[0]));
   }
   return new Promise((resolve, reject) => {
     db.get(sql, params, (error, row) => error ? reject(error) : resolve(row));
@@ -88,7 +98,7 @@ function get(sql, params = []) {
 
 function all(sql, params = []) {
   if (tursoClient) {
-    return remoteExecutor().execute({ sql, args: params }).then(result => result.rows);
+    return remoteExecutor().execute({ sql, args: params }).then(result => result.rows.map(normalizeRow));
   }
   return new Promise((resolve, reject) => {
     db.all(sql, params, (error, rows) => error ? reject(error) : resolve(rows));
