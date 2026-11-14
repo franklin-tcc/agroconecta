@@ -65,8 +65,8 @@ function remoteExecutor() {
 function normalizeRow(row) {
   if (!row || typeof row !== 'object') return row;
   const plain = {};
-  for (const [key, value] of Object.entries(row)) {
-    if (/^\d+$/.test(key)) continue;
+  for (const key of Object.keys(row)) {
+    const value = row[key];
     plain[key] = typeof value === 'bigint' ? Number(value) : value;
   }
   return plain;
@@ -133,6 +133,19 @@ function transaction(work) {
   });
   transactionQueue = pending.catch(() => {});
   return pending;
+}
+
+async function ensureColumn(tableName, columnName, definition) {
+  const columns = await all(`PRAGMA table_info(${tableName})`);
+  const exists = columns.some(col =>
+    String(col.name ?? col[1] ?? '').toLowerCase() === columnName.toLowerCase()
+  );
+  if (exists) return;
+  try {
+    await run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  } catch (error) {
+    if (!/duplicate column name/i.test(error.message)) throw error;
+  }
 }
 
 const ready = new Promise((resolve, reject) => {
@@ -270,10 +283,7 @@ const ready = new Promise((resolve, reject) => {
         transportista_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (order_id) REFERENCES Orders(id) ON DELETE CASCADE
       )`);
-      const conversationColumns = await all('PRAGMA table_info(Conversations)');
-      if (!conversationColumns.some(column => column.name === 'transportista_id')) {
-        await run('ALTER TABLE Conversations ADD COLUMN transportista_id INTEGER');
-      }
+      await ensureColumn('Conversations', 'transportista_id', 'INTEGER');
       await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_conversation
         ON Conversations(order_id) WHERE tipo='producto'`);
       await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_conversation
@@ -314,10 +324,7 @@ const ready = new Promise((resolve, reject) => {
         access_token_hash TEXT,
         FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE SET NULL
       )`);
-      const ticketColumns = await all('PRAGMA table_info(SupportTickets)');
-      if (!ticketColumns.some(column => column.name === 'access_token_hash')) {
-        await run('ALTER TABLE SupportTickets ADD COLUMN access_token_hash TEXT');
-      }
+      await ensureColumn('SupportTickets', 'access_token_hash', 'TEXT');
       await run(`CREATE TABLE IF NOT EXISTS SupportMessages (
         id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id INTEGER NOT NULL,
         usuario_id INTEGER, remitente TEXT NOT NULL CHECK(remitente IN ('usuario', 'admin')),
