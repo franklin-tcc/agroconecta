@@ -129,6 +129,56 @@ const ready = new Promise((resolve, reject) => {
   const initializeSchema = async () => {
     try {
       if (db) await run('PRAGMA journal_mode = WAL');
+      await run(`CREATE TABLE IF NOT EXISTS Usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rol TEXT NOT NULL CHECK(rol IN ('Comprador', 'Productor', 'Distribuidor')),
+        nombre TEXT NOT NULL,
+        dni_ruc TEXT NOT NULL,
+        telefono TEXT NOT NULL,
+        email TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        password_salt TEXT NOT NULL,
+        ubicacion_general TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      await run(`CREATE TABLE IF NOT EXISTS Compradores (
+        usuario_id INTEGER PRIMARY KEY,
+        direccion_entrega TEXT NOT NULL,
+        FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+      )`);
+      await run(`CREATE TABLE IF NOT EXISTS Productores (
+        usuario_id INTEGER PRIMARY KEY,
+        departamento TEXT NOT NULL,
+        provincia TEXT NOT NULL,
+        distrito TEXT NOT NULL,
+        comunidad TEXT NOT NULL DEFAULT '',
+        metodos_cobro TEXT NOT NULL DEFAULT '',
+        asociacion TEXT NOT NULL DEFAULT '',
+        carnet_url TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+      )`);
+      await run(`CREATE TABLE IF NOT EXISTS Cultivos_Productor (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        productor_id INTEGER NOT NULL,
+        categoria TEXT NOT NULL DEFAULT 'General',
+        nombre_cultivo TEXT NOT NULL,
+        FOREIGN KEY (productor_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+      )`);
+      await run(`CREATE TABLE IF NOT EXISTS Transportistas (
+        usuario_id INTEGER PRIMARY KEY,
+        vehiculo TEXT NOT NULL,
+        capacidad TEXT NOT NULL DEFAULT '',
+        placa TEXT NOT NULL DEFAULT '',
+        licencia_numero TEXT NOT NULL DEFAULT '',
+        licencia_categoria TEXT NOT NULL DEFAULT '',
+        licencia_vencimiento TEXT NOT NULL DEFAULT '',
+        zonas_servicio TEXT NOT NULL DEFAULT '',
+        soat_vigente INTEGER NOT NULL DEFAULT 0,
+        revision_tecnica INTEGER NOT NULL DEFAULT 0,
+        licencia_frontal_url TEXT NOT NULL DEFAULT '',
+        licencia_posterior_url TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+      )`);
       await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_normalized
         ON Usuarios(lower(trim(email))) WHERE email IS NOT NULL AND trim(email) <> ""`);
       await run(`CREATE TABLE IF NOT EXISTS AuthSessions (
@@ -1326,8 +1376,8 @@ app.post('/api/orders/:id/transport-offers', requireAuth, requireRole('Distribui
       await run('INSERT INTO TransportOffers(order_id, transportista_id, precio, mensaje) VALUES (?, ?, ?, ?)',
         [orderId, req.user.id, price, message]);
     }
-      await createConversation(orderId, 'transporte',
-        [order.comprador_id, order.productor_id, req.user.id], req.user.id);
+    await createConversation(orderId, 'transporte',
+      [order.comprador_id, order.productor_id, req.user.id], req.user.id);
   });
   res.status(201).json({ ok: true, message: 'Tu oferta fue enviada.' });
 });
