@@ -62,9 +62,16 @@ function remoteExecutor() {
   return transactionContext.getStore() || tursoClient;
 }
 
-function normalizeRow(row) {
+function normalizeRow(row, columns = []) {
   if (!row || typeof row !== 'object') return row;
   const plain = {};
+  if (Array.isArray(columns) && columns.length > 0) {
+    columns.forEach((col, index) => {
+      const value = row[col] !== undefined ? row[col] : row[index];
+      plain[col] = typeof value === 'bigint' ? Number(value) : value;
+    });
+    return plain;
+  }
   for (const key of Object.keys(row)) {
     const value = row[key];
     plain[key] = typeof value === 'bigint' ? Number(value) : value;
@@ -72,24 +79,11 @@ function normalizeRow(row) {
   return plain;
 }
 
-function run(sql, params = []) {
-  if (tursoClient) {
-    return remoteExecutor().execute({ sql, args: params }).then(result => ({
-      id: result.lastInsertRowid == null ? 0 : Number(result.lastInsertRowid),
-      changes: Number(result.rowsAffected || 0)
-    }));
-  }
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function onRun(error) {
-      if (error) return reject(error);
-      resolve({ id: this.lastID, changes: this.changes });
-    });
-  });
-}
-
 function get(sql, params = []) {
   if (tursoClient) {
-    return remoteExecutor().execute({ sql, args: params }).then(result => normalizeRow(result.rows[0]));
+    return remoteExecutor().execute({ sql, args: params }).then(result =>
+      normalizeRow(result.rows[0], result.columns)
+    );
   }
   return new Promise((resolve, reject) => {
     db.get(sql, params, (error, row) => error ? reject(error) : resolve(row));
@@ -98,13 +92,14 @@ function get(sql, params = []) {
 
 function all(sql, params = []) {
   if (tursoClient) {
-    return remoteExecutor().execute({ sql, args: params }).then(result => result.rows.map(normalizeRow));
+    return remoteExecutor().execute({ sql, args: params }).then(result =>
+      result.rows.map(row => normalizeRow(row, result.columns))
+    );
   }
   return new Promise((resolve, reject) => {
     db.all(sql, params, (error, rows) => error ? reject(error) : resolve(rows));
   });
 }
-
 let transactionQueue = Promise.resolve();
 function transaction(work) {
   if (tursoClient) {
