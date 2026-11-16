@@ -4,15 +4,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const status = document.getElementById('adminStatus');
   const toolbar = document.getElementById('adminToolbar');
   const ticketList = document.getElementById('adminTickets');
-  const conversation = document.getElementById('adminConversation');
-  const conversationTitle = document.getElementById('adminConversationTitle');
-  const conversationMessages = document.getElementById('adminConversationMessages');
-  const replyForm = document.getElementById('adminReplyForm');
+  const chatDock = document.getElementById('adminChatDock');
   const notificationButton = document.getElementById('adminEnableNotifications');
   let adminKey = '';
-  let activeTicketId = null;
   let pollTimer = null;
   let knownLastMessageIds = new Map();
+  const openChats = new Map();
 
   function setStatus(message, isError = false) {
     status.textContent = message;
@@ -76,7 +73,9 @@ document.addEventListener('DOMContentLoaded', () => {
       open.dataset.ticketOpen = 'true';
       open.type = 'button';
       open.textContent = 'Abrir chat';
-      open.addEventListener('click', () => openTicket(ticket));
+      open.addEventListener('click', () => {
+        openTicket(ticket).catch(error => setStatus(error.message, true));
+      });
 
       const state = document.createElement('select');
       state.setAttribute('aria-label', `Estado de la consulta ${ticket.id}`);
@@ -118,8 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function renderMessages(messages, append) {
-    if (!append) conversationMessages.replaceChildren();
+  function renderMessages(messages, container, append) {
+    if (!append) container.replaceChildren();
     messages.forEach(message => {
       const item = document.createElement('article');
       const sender = ['admin', 'assistant'].includes(message.remitente)
@@ -133,25 +132,89 @@ document.addEventListener('DOMContentLoaded', () => {
       const time = document.createElement('small');
       time.textContent = message.created_at;
       item.append(author, body, time);
-      conversationMessages.appendChild(item);
+      container.appendChild(item);
     });
-    conversationMessages.scrollTop = conversationMessages.scrollHeight;
+    container.scrollTop = container.scrollHeight;
   }
 
-  async function refreshActiveTicket() {
-    if (!activeTicketId) return;
-    const lastId = Number(conversationMessages.querySelector('[data-message-id]:last-child')?.dataset.messageId) || 0;
-    const result = await adminRequest(`/api/admin/tickets/${activeTicketId}/messages?after=${lastId}`);
-    renderMessages(result.messages, true);
+  function createChatWindow(ticket) {
+    const ticketId = Number(ticket.id);
+    const card = document.createElement('section');
+    card.className = 'admin-chat-window';
+    card.dataset.ticketId = String(ticketId);
+
+    const heading = document.createElement('header');
+    heading.className = 'admin-chat-window-heading';
+    const headingText = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = `#${ticketId} · ${ticket.asunto}`;
+    const subtitle = document.createElement('small');
+    subtitle.textContent = ticket.email || 'Usuario de AgroConecta';
+    headingText.append(title, subtitle);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'admin-chat-close';
+    close.dataset.closeTicket = String(ticketId);
+    close.setAttribute('aria-label', `Cerrar chat ${ticketId}`);
+    close.textContent = '×';
+    heading.append(headingText, close);
+
+    const messages = document.createElement('div');
+    messages.className = 'admin-chat-window-messages';
+    messages.setAttribute('aria-live', 'polite');
+    const form = document.createElement('form');
+    form.className = 'admin-chat-window-form';
+    form.dataset.ticketReplyForm = String(ticketId);
+    const input = document.createElement('textarea');
+    input.name = 'mensaje';
+    input.rows = 2;
+    input.maxLength = 1800;
+    input.placeholder = 'Escribe una respuesta...';
+    input.setAttribute('aria-label', `Responder en el chat ${ticketId}`);
+    input.required = true;
+    const send = document.createElement('button');
+    send.type = 'submit';
+    send.className = 'btn btn-primary';
+    send.textContent = 'Enviar';
+    form.append(input, send);
+    card.append(heading, messages, form);
+    chatDock.appendChild(card);
+    openChats.set(ticketId, { card, messages });
+    return openChats.get(ticketId);
   }
 
   async function openTicket(ticket) {
-    activeTicketId = Number(ticket.id);
-    conversationTitle.textContent = `Consulta #${ticket.id}: ${ticket.asunto}`;
-    conversation.hidden = false;
-    const result = await adminRequest(`/api/admin/tickets/${activeTicketId}/messages`);
-    renderMessages(result.messages, false);
-    document.getElementById('adminReplyMessage').focus();
+    const ticketId = Number(ticket.id);
+    const chat = openChats.get(ticketId) || createChatWindow(ticket);
+    chat.card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
+    await refreshTicketWindow(ticketId, true);
+    chat.card.querySelector('textarea').focus();
+  }
+
+  async function refreshTicketWindow(ticketId, replace = false) {
+    const chat = openChats.get(Number(ticketId));
+    if (!chat) return;
+    const lastId = replace ? 0 :
+      Number(chat.messages.querySelector('[data-message-id]:last-child')?.dataset.messageId) || 0;
+    const result = await adminRequest(
+      `/api/admin/tickets/${ticketId}/messages?after=${lastId}`
+    );
+    chat.messages.querySelectorAll('.admin-chat-error').forEach(notice => notice.remove());
+    renderMessages(result.messages, chat.messages, replace);
+  }
+
+  async function refreshOpenChats() {
+    await Promise.all([...openChats.keys()].map(ticketId =>
+      refreshTicketWindow(ticketId).catch(error => {
+        const chat = openChats.get(ticketId);
+        if (!chat) return;
+        chat.messages.querySelectorAll('.admin-chat-error').forEach(notice => notice.remove());
+        const notice = document.createElement('p');
+        notice.className = 'admin-chat-error';
+        notice.textContent = `No se pudo actualizar este chat: ${error.message}`;
+        chat.messages.appendChild(notice);
+      })
+    ));
   }
 
   async function loadTickets({ silent = false, notify = false } = {}) {
@@ -176,7 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
     knownLastMessageIds = new Map(result.tickets.map(ticket =>
       [ticket.id, Number(ticket.ultimo_mensaje_id) || 0]
     ));
-    renderTickets(result.tickets);
+    if (!ticketList.contains(document.activeElement)) renderTickets(result.tickets);
     if (newUserMessages) {
       setStatus(`${newUserMessages} consulta(s) nueva(s) o con respuesta del usuario.`);
       document.title = `(${newUserMessages}) Soporte | AgroConecta`;
@@ -185,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus(`${result.tickets.length} consulta(s) cargada(s).`);
       document.title = 'Bandeja de soporte | AgroConecta';
     }
-    await refreshActiveTicket();
+    await refreshOpenChats();
   }
 
   function showTicketNotification(ticket) {
@@ -225,6 +288,13 @@ document.addEventListener('DOMContentLoaded', () => {
     notificationButton.textContent = 'Avisos del navegador activados';
   }
 
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && adminKey) {
+      loadTickets({ silent: true, notify: true })
+        .catch(error => setStatus(error.message, true));
+    }
+  });
+
   loginForm.addEventListener('submit', async event => {
     event.preventDefault();
     const submit = loginForm.querySelector('button[type="submit"]');
@@ -238,7 +308,7 @@ document.addEventListener('DOMContentLoaded', () => {
       toolbar.hidden = false;
       pollTimer = window.setInterval(() => {
         loadTickets({ silent: true, notify: true }).catch(error => setStatus(error.message, true));
-      }, 5000);
+      }, 3000);
     } catch (error) {
       adminKey = '';
       setStatus(`${error.message} Verifica ADMIN_API_KEY en .env y reinicia el servidor.`, true);
@@ -260,20 +330,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  replyForm.addEventListener('submit', async event => {
+  chatDock.addEventListener('click', event => {
+    const closeButton = event.target.closest('[data-close-ticket]');
+    if (!closeButton) return;
+    const ticketId = Number(closeButton.dataset.closeTicket);
+    openChats.get(ticketId)?.card.remove();
+    openChats.delete(ticketId);
+  });
+
+  chatDock.addEventListener('submit', async event => {
     event.preventDefault();
-    if (!activeTicketId) return;
-    const submit = replyForm.querySelector('button[type="submit"]');
-    const input = document.getElementById('adminReplyMessage');
+    const form = event.target.closest('[data-ticket-reply-form]');
+    if (!form) return;
+    const ticketId = Number(form.dataset.ticketReplyForm);
+    const submit = form.querySelector('button[type="submit"]');
+    const input = form.elements.mensaje;
     submit.disabled = true;
     try {
-      await adminRequest(`/api/admin/tickets/${activeTicketId}/messages`, {
+      await adminRequest(`/api/admin/tickets/${ticketId}/messages`, {
         method: 'POST',
         body: JSON.stringify({ mensaje: input.value.trim() })
       });
       input.value = '';
       await loadTickets({ silent: true });
-      setStatus(`Respuesta enviada a la consulta #${activeTicketId}.`);
+      setStatus(`Respuesta enviada a la consulta #${ticketId}.`);
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -283,13 +363,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('adminLogout').addEventListener('click', () => {
     adminKey = '';
-    activeTicketId = null;
     knownLastMessageIds.clear();
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = null;
     ticketList.replaceChildren();
-    conversationMessages.replaceChildren();
-    conversation.hidden = true;
+    openChats.clear();
+    chatDock.replaceChildren();
     toolbar.hidden = true;
     loginForm.hidden = false;
     setStatus('Bandeja cerrada.');

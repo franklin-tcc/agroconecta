@@ -295,12 +295,33 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     assert.equal(offer.status, 201);
 
     const buyerTransportChats = await request('/api/conversations', { cookie: buyerCookie });
-    const transportChat = buyerTransportChats.body.conversations.find(chat => chat.tipo === 'transporte');
+    const transportChat = buyerTransportChats.body.conversations.find(chat =>
+      chat.order_id === order.body.orderIds[0] &&
+      chat.tipo === 'transporte' && chat.alcance === 'grupal'
+    );
+    const buyerDriverChat = buyerTransportChats.body.conversations.find(chat =>
+      chat.order_id === order.body.orderIds[0] &&
+      chat.tipo === 'transporte' && chat.alcance === 'comprador-transportista'
+    );
     assert.ok(transportChat);
+    assert.ok(buyerDriverChat);
+    const farmerPrivateChatAccess = await request(
+      `/api/conversations/${buyerDriverChat.id}/messages`, { cookie: farmerCookie }
+    );
+    assert.equal(farmerPrivateChatAccess.status, 404);
     const driverMessage = await request(`/api/conversations/${transportChat.id}/messages`, {
       method: 'POST', cookie: driverCookie, body: { contenido: 'Confirmo la ruta y el precio indicado.' }
     });
     assert.equal(driverMessage.status, 201);
+    const buyerPrivateMessage = await request(`/api/conversations/${buyerDriverChat.id}/messages`, {
+      method: 'POST', cookie: buyerCookie, body: { contenido: 'Hablemos por privado de la tarifa.' }
+    });
+    assert.equal(buyerPrivateMessage.status, 201);
+    const farmerTransportChats = await request('/api/conversations', { cookie: farmerCookie });
+    assert.ok(farmerTransportChats.body.conversations.some(chat =>
+      chat.order_id === order.body.orderIds[0] &&
+      chat.tipo === 'transporte' && chat.alcance === 'productor-transportista'
+    ));
     const offers = await request(`/api/orders/${order.body.orderIds[0]}/transport-offers`, { cookie: buyerCookie });
     assert.equal(offers.body.offers.length, 1);
     const accepted = await request(
@@ -309,8 +330,16 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     );
     assert.equal(accepted.status, 200);
 
+    const passwordAssistant = await request('/api/support/assistant', {
+      method: 'POST',
+      cookie: buyerCookie,
+      body: { mensaje: 'Olvidé mi contraseña, ¿cómo puedo recuperarla?' }
+    });
+    assert.equal(passwordAssistant.status, 200);
+    assert.equal(passwordAssistant.body.resuelto, true);
+    assert.match(passwordAssistant.body.respuesta, /Olvidé mi contraseña/);
     const assistantAnswer = await request('/api/support/assistant', {
-      method: 'POST', cookie: buyerCookie, body: { mensaje: 'Mi situación no aparece en las opciones habituales' }
+      method: 'POST', cookie: buyerCookie, body: { mensaje: '¿Cuál es la capital de Marte?' }
     });
     assert.equal(assistantAnswer.status, 200);
     assert.equal(assistantAnswer.body.resuelto, false);
@@ -321,7 +350,7 @@ test('accounts, purchases, transport offers, chats and support use the existing 
       body: {
         asunto: 'Ayuda con pedidos',
         transcript: [
-          { role: 'user', content: 'Mi situación no aparece en las opciones habituales' },
+          { role: 'user', content: '¿Cuál es la capital de Marte?' },
           { role: 'assistant', content: assistantAnswer.body.respuesta },
           { role: 'user', content: 'No, necesito ayuda de una persona.' },
           { role: 'assistant', content: 'Estoy pasando esta conversación al administrador.' }
@@ -335,7 +364,7 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     );
     assert.equal(buyerSupportMessages.status, 200);
     assert.equal(buyerSupportMessages.body.messages[0].contenido,
-      'Mi situación no aparece en las opciones habituales');
+      '¿Cuál es la capital de Marte?');
     assert.equal(buyerSupportMessages.body.messages[1].remitente, 'assistant');
     assert.equal(buyerSupportMessages.body.messages[1].autor, 'Asistente AgroConecta');
     assert.equal(buyerSupportMessages.body.messages.length, 4);

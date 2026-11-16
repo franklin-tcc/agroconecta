@@ -295,10 +295,12 @@ const ready = new Promise((resolve, reject) => {
         FOREIGN KEY (order_id) REFERENCES Orders(id) ON DELETE CASCADE
       )`);
       await ensureColumn('Conversations', 'transportista_id', 'INTEGER');
+      await ensureColumn('Conversations', 'alcance', "TEXT NOT NULL DEFAULT 'grupal'");
       await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_product_conversation
         ON Conversations(order_id) WHERE tipo='producto'`);
-      await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_transport_conversation
-        ON Conversations(order_id, transportista_id) WHERE tipo='transporte'`);
+      await run('DROP INDEX IF EXISTS idx_transport_conversation');
+      await run(`CREATE UNIQUE INDEX idx_transport_conversation
+        ON Conversations(order_id, transportista_id, alcance) WHERE tipo='transporte'`);
       await run(`CREATE TABLE IF NOT EXISTS ConversationMembers (
         conversation_id INTEGER NOT NULL, usuario_id INTEGER NOT NULL,
         PRIMARY KEY(conversation_id, usuario_id),
@@ -350,6 +352,13 @@ const ready = new Promise((resolve, reject) => {
       await run(`INSERT INTO SupportMessages(ticket_id, usuario_id, remitente, contenido)
         SELECT t.id, t.usuario_id, 'usuario', t.mensaje FROM SupportTickets t
         WHERE NOT EXISTS (SELECT 1 FROM SupportMessages m WHERE m.ticket_id=t.id)`);
+      const assignedOrders = await all(`SELECT id, comprador_id, productor_id, transportista_id
+        FROM Orders WHERE transportista_id IS NOT NULL`);
+      for (const order of assignedOrders) {
+        await createTransportConversations(
+          order.id, order.comprador_id, order.productor_id, order.transportista_id
+        );
+      }
       resolve();
     } catch (error) {
       reject(error);
@@ -795,15 +804,15 @@ async function registerAccount(req, res) {
   }
 }
 
-function createConversation(orderId, type, userIds, transportistaId = null) {
+function createConversation(orderId, type, userIds, transportistaId = null, scope = 'grupal') {
   return new Promise(async (resolve, reject) => {
     try {
       const found = await get(`SELECT id FROM Conversations WHERE order_id = ? AND tipo = ?
-        AND transportista_id IS ?`, [orderId, type, transportistaId]);
+        AND transportista_id IS ? AND alcance=?`, [orderId, type, transportistaId, scope]);
       const conversationId = found
         ? found.id
-        : (await run('INSERT INTO Conversations(order_id, tipo, transportista_id) VALUES (?, ?, ?)',
-          [orderId, type, transportistaId])).id;
+        : (await run(`INSERT INTO Conversations(order_id, tipo, transportista_id, alcance)
+          VALUES (?, ?, ?, ?)`, [orderId, type, transportistaId, scope])).id;
       for (const userId of new Set(userIds)) {
         await run('INSERT OR IGNORE INTO ConversationMembers(conversation_id, usuario_id) VALUES (?, ?)',
           [conversationId, userId]);
@@ -813,6 +822,12 @@ function createConversation(orderId, type, userIds, transportistaId = null) {
       reject(error);
     }
   });
+}
+
+async function createTransportConversations(orderId, buyerId, farmerId, driverId) {
+  await createConversation(orderId, 'transporte', [buyerId, farmerId, driverId], driverId, 'grupal');
+  await createConversation(orderId, 'transporte', [buyerId, driverId], driverId, 'comprador-transportista');
+  await createConversation(orderId, 'transporte', [farmerId, driverId], driverId, 'productor-transportista');
 }
 
 function createTicket({
@@ -1247,7 +1262,9 @@ app.get('/api/transport/requests', requireAuth, async (req, res) => {
     ? await all(`SELECT r.*, creator.nombre AS creador, buyer.nombre AS comprador,
         farmer.nombre AS productor, driver.nombre AS transportista,
         (SELECT contenido FROM TransportRequestMessages m
-          WHERE m.solicitud_id=r.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje
+          WHERE m.solicitud_id=r.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje,
+        (SELECT created_at FROM TransportRequestMessages m
+          WHERE m.solicitud_id=r.id ORDER BY m.id DESC LIMIT 1) AS mensaje_fecha
       FROM TransportRequests r
       JOIN Usuarios creator ON creator.id=r.creador_id
       LEFT JOIN Usuarios buyer ON buyer.id=r.comprador_id
@@ -1258,7 +1275,9 @@ app.get('/api/transport/requests', requireAuth, async (req, res) => {
     : await all(`SELECT r.*, creator.nombre AS creador, buyer.nombre AS comprador,
         farmer.nombre AS productor, driver.nombre AS transportista,
         (SELECT contenido FROM TransportRequestMessages m
-          WHERE m.solicitud_id=r.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje
+          WHERE m.solicitud_id=r.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje,
+        (SELECT created_at FROM TransportRequestMessages m
+          WHERE m.solicitud_id=r.id ORDER BY m.id DESC LIMIT 1) AS mensaje_fecha
       FROM TransportRequests r
       JOIN Usuarios creator ON creator.id=r.creador_id
       LEFT JOIN Usuarios buyer ON buyer.id=r.comprador_id
@@ -1324,8 +1343,9 @@ app.post('/api/transport/requests/:id/accept', requireAuth, requireRole('Distrib
   if (!Number.isInteger(id) || id < 1 || !Number.isFinite(price) || price <= 0 || price > 10000000) {
     return res.status(400).json({ error: 'Indica un precio de transporte válido.' });
   }
-  const request = await get(`SELECT order_id FROM TransportRequests
-    WHERE id=? AND estado='abierta' AND transportista_id IS NULL`, [id]);
+  const request = await get(`SELECT r.order_id, o.comprador_id, o.productor_id
+    FROM TransportRequests r LEFT JOIN Orders o ON o.id=r.order_id
+    WHERE r.id=? AND r.estado='abierta' AND r.transportista_id IS NULL`, [id]);
   if (!request) return res.status(409).json({ error: 'La solicitud ya fue aceptada o dejó de estar disponible.' });
   try {
     const accepted = await transaction(async () => {
@@ -1343,6 +1363,11 @@ app.post('/api/transport/requests/:id/accept', requireAuth, requireRole('Distrib
       if (!update.changes) throw Object.assign(new Error(
         'La solicitud ya fue aceptada o dejó de estar disponible.'
       ), { status: 409 });
+      if (request.order_id) {
+        await createTransportConversations(
+          request.order_id, request.comprador_id, request.productor_id, req.user.id
+        );
+      }
       return true;
     });
     if (!accepted) return res.status(409).json({ error: 'La solicitud ya no está disponible.' });
@@ -1422,8 +1447,7 @@ app.post('/api/orders/:id/transport-offers', requireAuth, requireRole('Distribui
       await run('INSERT INTO TransportOffers(order_id, transportista_id, precio, mensaje) VALUES (?, ?, ?, ?)',
         [orderId, req.user.id, price, message]);
     }
-    await createConversation(orderId, 'transporte',
-      [order.comprador_id, order.productor_id, req.user.id], req.user.id);
+    await createTransportConversations(orderId, order.comprador_id, order.productor_id, req.user.id);
   });
   res.status(201).json({ ok: true, message: 'Tu oferta fue enviada.' });
 });
@@ -1458,8 +1482,7 @@ app.post('/api/orders/:id/transport-offers/:offerId/accept', requireAuth, async 
       [offerId, orderId]);
     await run(`UPDATE TransportRequests SET estado='cancelada'
       WHERE order_id=? AND estado='abierta'`, [orderId]);
-    await createConversation(orderId, 'transporte',
-      [order.comprador_id, order.productor_id, offer.transportista_id], offer.transportista_id);
+    await createTransportConversations(orderId, order.comprador_id, order.productor_id, offer.transportista_id);
   });
   res.json({ ok: true, message: 'Transportista asignado. Se abrió un chat con las partes.' });
 });
@@ -1481,7 +1504,7 @@ app.patch('/api/orders/:id/status', requireAuth, async (req, res) => {
 });
 
 app.get('/api/conversations', requireAuth, async (req, res) => {
-  const conversations = await all(`SELECT c.id, c.order_id, c.tipo, c.created_at,
+  const conversations = await all(`SELECT c.id, c.order_id, c.tipo, c.alcance, c.created_at,
   c.transportista_id,
     o.nombre_producto, o.estado, o.total,
     (SELECT GROUP_CONCAT(other_user.nombre, ' · ')
@@ -1525,6 +1548,30 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
 });
 
 const assistantAnswers = [
+  [/\b(hola|buenos dias|buenas tardes|buenas noches)\b/i,
+    '¡Hola! Soy el asistente de AgroConecta. Puedo guiarte paso a paso con tu cuenta, compras, publicaciones, chats, transporte, pagos y seguridad. Cuéntame qué intentas hacer y qué parte no te sale.'],
+  [/\b(recuper|contrasen|iniciar sesion|ingresar|codigo de verificacion|clave)\b/i,
+    'En “Mi cuenta”, ingresa el correo y la contraseña de tu registro. Si la olvidaste, pulsa “Olvidé mi contraseña”, elige correo o WhatsApp, solicita el código y sigue los pasos para crear otra clave. El envío solo funciona cuando el proveedor correspondiente está configurado; nunca compartas el código con otra persona.'],
+  [/\b(registr|crear cuenta|correo unico|perfil|rol)\b/i,
+    'Para registrarte, abre “Registrarse” y elige comprador, agricultor o transportista. Completa los datos solicitados y crea una contraseña. Cada correo corresponde a una cuenta; luego inicia sesión desde “Mi cuenta”. Tu panel muestra herramientas según el perfil elegido.'],
+  [/\b(compr|carrito|pedido|solicitud de compra|direccion|entrega)\b/i,
+    'Para comprar, inicia sesión como comprador, añade al carrito una cosecha publicada, indica la cantidad y confirma la dirección de entrega. “Enviar solicitud de compra” crea el pedido y abre el chat privado con el agricultor. Revisa con él disponibilidad, precio final, fecha y condiciones antes de cerrar el trato.'],
+  [/\b(productor|agricult|public|editar|foto|imagen|pausar|activar|cosecha)\b/i,
+    'El perfil de agricultor tiene su propio panel. En “Mis cosechas” completa nombre, categoría, región, precio, unidad, cantidad y descripción; puedes agregar una foto JPG, PNG o WebP. Después puedes editar la publicación, pausarla o reactivarla. Los compradores solo pueden solicitar cosechas que estén activas y disponibles.'],
+  [/\b(transport|delivery|envio|flete|ruta|conductor)\b/i,
+    'Compradores y agricultores pueden publicar una solicitud desde “Tablero de transporte”, asociándola a un pedido o indicando carga, origen y destino. El transportista revisa la ruta y propone su tarifa. Cuando se acepta, queda disponible el chat grupal para comprador, agricultor y transportista, además de chats privados entre cada pareja. Acuerden horario, precio y punto de recojo antes del viaje.'],
+  [/\b(chat|mensaje|convers|contactar|hablar con)\b/i,
+    'Abre la pestaña “Chats” de tu cuenta para ver todas tus conversaciones en un solo lugar. Encontrarás el chat privado del pedido entre comprador y agricultor; si hay transporte asignado, también aparecen el grupo de los tres y los chats privados de comprador-transportista y agricultor-transportista. Los mensajes se actualizan automáticamente mientras la página está abierta.'],
+  [/\b(pago|yape|plin|transfer|efectivo|deposit|comprobante)\b/i,
+    'AgroConecta facilita el contacto, pero esta versión no cobra ni custodia dinero. Comprador y agricultor acuerdan directamente cómo y cuándo pagar; si hay transporte, acuerdan su tarifa con el transportista. Verifica los datos del destinatario y conserva tus comprobantes. No envíes contraseñas, códigos ni datos completos de tarjetas.'],
+  [/\b(cancel|anular|cambiar pedido|estado del pedido|recibir|recepcion)\b/i,
+    'En “Mi panel” puedes revisar el estado de tus pedidos. El agricultor actualiza la preparación y el comprador confirma la recepción cuando corresponda. Si necesitas cambiar o cancelar algo, avisa cuanto antes por el chat del pedido y acuerda la solución con las demás personas; la plataforma no cancela ni reembolsa pagos automáticamente.'],
+  [/\b(licencia|soat|vehiculo|placa|capacidad|verificar)\b/i,
+    'El registro de transportista recoge información del vehículo, capacidad y licencia para presentar el perfil. La plataforma no verifica automáticamente esos documentos ni sustituye las verificaciones que deben hacer las partes. Confirma por tu cuenta los datos, la ruta, la carga y las condiciones antes de aceptar.'],
+  [/\b(error|no puedo|no aparece|no carga|fall|problema tecnico)\b/i,
+    'Para orientarte mejor, dime en qué sección estabas (cuenta, catálogo, pedido, transporte o chats), qué botón presionaste y qué mensaje apareció. No compartas tu contraseña ni códigos. Si después de revisar los pasos el problema continúa, puedes transferir esta misma conversación a soporte.'],
+  [/\b(nosotros|agroconecta|plataforma|funciona|comision)\b/i,
+    'AgroConecta conecta a compradores con agricultores y transportistas. La plataforma permite publicar cosechas, enviar solicitudes de compra, coordinar transporte y conversar por chats privados o grupales. Los usuarios acuerdan directamente disponibilidad, precio, pago y entrega; AgroConecta no procesa pagos ni garantiza acuerdos entre usuarios.'],
   [/registr|crear.*cuenta|correo.*unico/i, 'Cada correo solo puede registrar una cuenta y un perfil. Después de crearla, la sesión queda iniciada; usa “Mi cuenta” para volver a entrar. Si olvidaste tu clave, solicita recuperación desde el acceso.'],
   [/contrasen|ingresar|iniciar sesion|recuper|clave/i, 'Inicia sesión desde “Mi cuenta” con el correo y la contraseña de tu registro. En “Olvidé mi contraseña” puedes pedir un código de un solo uso por correo o WhatsApp; el canal debe estar configurado por el administrador.'],
   [/compr|carrito|pedido/i, 'Inicia sesión como comprador, agrega al carrito cosechas publicadas por agricultores, confirma dirección y cantidad, y envía la solicitud. El chat del pedido te conecta con el productor; los pagos se acuerdan directamente y no se procesan aquí.'],
@@ -1541,10 +1588,11 @@ const assistantAnswers = [
 app.post('/api/support/assistant', rateLimit(30, 60 * 1000), async (req, res) => {
   const message = cleanText(req.body?.mensaje, 1800);
   if (!message) return res.status(400).json({ error: 'Escribe una consulta.' });
-  const match = assistantAnswers.find(([pattern]) => pattern.test(message));
+  const normalizedMessage = message.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const match = assistantAnswers.find(([pattern]) => pattern.test(normalizedMessage));
   if (match) return res.json({ respuesta: match[1], resuelto: true, derivado: false });
   res.json({
-    respuesta: 'No encontré una respuesta confiable todavía. Puedes reformular la pregunta o, si prefieres, pedir que un administrador continúe en este mismo chat.',
+    respuesta: 'No encontré una respuesta confiable. Este asistente solo atiende temas de AgroConecta; si tu consulta sí es sobre una función de la plataforma, dime qué intentabas hacer y qué ocurrió. Si ya lo explicaste y todavía necesitas ayuda, puedes pedir que un administrador siga en este mismo chat.',
     resuelto: false,
     derivado: false
   });

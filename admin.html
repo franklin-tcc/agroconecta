@@ -13,7 +13,7 @@
     <header class="admin-heading">
       <span class="sub-heading">Acceso privado</span>
       <h1>Bandeja de soporte</h1>
-      <p>Responde en el mismo chat donde el usuario pidió ayuda y actualiza el estado. La bandeja consulta nuevos mensajes mientras esta página está abierta; la clave se mantiene solo en esta página.</p>
+      <p>Las consultas nuevas aparecen aquí automáticamente. Abre varios chats en ventanas independientes y responde en el mismo hilo que inició el usuario. La bandeja se actualiza cada tres segundos mientras esta página está abierta; la clave se mantiene solo en esta página.</p>
       <p class="admin-setup-note">Configura <code>ADMIN_API_KEY</code> como variable secreta en Render o en el archivo local <code>.env</code>. No uses una clave corta ni la compartas.</p>
     </header>
 
@@ -31,15 +31,7 @@
       <button id="adminLogout" class="btn btn-outline-dark" type="button">Cerrar bandeja</button>
     </div>
     <section id="adminTickets" class="admin-tickets" aria-live="polite"></section>
-    <section id="adminConversation" class="admin-conversation" hidden>
-      <h2 id="adminConversationTitle">Conversación de soporte</h2>
-      <div id="adminConversationMessages" class="admin-conversation-messages" aria-live="polite"></div>
-      <form id="adminReplyForm" class="admin-reply-form">
-        <label for="adminReplyMessage">Responder al usuario</label>
-        <textarea id="adminReplyMessage" rows="3" maxlength="1800" required></textarea>
-        <button class="btn btn-primary" type="submit">Enviar respuesta</button>
-      </form>
-    </section>
+    <div id="adminChatDock" class="admin-chat-dock" aria-label="Chats abiertos de soporte"></div>
   </main>
   <script src="admin.js" defer></script>
 </body>

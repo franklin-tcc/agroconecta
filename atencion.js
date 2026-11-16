@@ -149,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
           'La recuperación por correo requiere SMTP; la recuperación por WhatsApp requiere Meta WhatsApp Cloud API y una plantilla aprobada. La aplicación no verifica la identidad de personas, licencias, vehículos ni asociaciones.'
         ]],
         ['4. Acuerdos entre usuarios', [
-          'Los usuarios deben confirmar directamente la disponibilidad, calidad, precio, pago, transporte, entrega y cualquier condición comercial. Las solicitudes de transporte vinculadas a pedidos permiten un chat grupal; la plataforma no es parte de los acuerdos ni garantiza la conducta, identidad, solvencia o cumplimiento de los usuarios.',
+          'Los usuarios deben confirmar directamente la disponibilidad, calidad, precio, pago, transporte, entrega y cualquier condición comercial. La pestaña Chats reúne la conversación privada de compra, los chats privados de transporte y el grupo con comprador, agricultor y transportista cuando la ruta está vinculada a un pedido. La plataforma no es parte de los acuerdos ni garantiza la conducta, identidad, solvencia o cumplimiento de los usuarios.',
           'La coordinación de una disputa puede ser orientativa y no reemplaza los mecanismos legales o de consumo que correspondan.'
         ]],
         ['5. Datos personales y archivos', [

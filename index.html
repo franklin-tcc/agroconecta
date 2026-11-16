@@ -162,6 +162,7 @@
           <li id="registerNavItem"><button class="tab-btn" data-tab="tab-contacto" type="button">Registrarse</button></li>
           <li><button class="tab-btn" data-tab="tab-support" type="button">Soporte</button></li>
           <li id="dashboardNavItem" hidden><button class="tab-btn nav-tab" data-tab="tab-dashboard" type="button">Mi panel</button></li>
+          <li id="messagesNavItem" hidden><button class="tab-btn nav-tab" data-tab="tab-messages" type="button">Chats</button></li>
           <li class="nav-role-entry"><button class="tab-btn nav-tab" data-tab="tab-contacto" data-role="Productor" type="button">Soy agricultor · vender</button></li>
         </ul>
 
@@ -697,17 +698,50 @@
       </div>
     </section>
 
+    <section id="tab-messages" class="tab-content">
+      <div class="container messages-page">
+        <header class="messages-heading">
+          <div><span class="sub-heading">Comunicación directa</span><h2>Mis chats</h2>
+            <p>Conversaciones de compra, transporte y grupos reunidas en un solo lugar.</p></div>
+          <button class="btn btn-outline-dark" id="messagesRefresh" type="button">Actualizar chats</button>
+        </header>
+        <div class="messenger-layout">
+          <aside class="messenger-sidebar" aria-label="Lista de conversaciones">
+            <div class="messenger-sidebar-heading"><strong>Conversaciones</strong><small>Privadas y grupales</small></div>
+            <div id="conversationList" class="conversation-list" aria-live="polite">
+              <p class="dashboard-empty">Inicia sesión para ver tus conversaciones.</p>
+            </div>
+          </aside>
+          <section class="messenger-thread" aria-label="Chat seleccionado">
+            <header class="messenger-thread-heading">
+              <span class="messenger-avatar" id="chatThreadAvatar" aria-hidden="true">A</span>
+              <div><h3 id="chatThreadTitle">Elige una conversación</h3>
+                <p id="chatThreadSubtitle">Aquí verás quiénes participan y sus mensajes.</p></div>
+            </header>
+            <div id="chatThreadMessages" class="chat-thread-messages" aria-live="polite">
+              <p class="messenger-empty">Selecciona un chat de la lista para empezar.</p>
+            </div>
+            <form id="chatThreadForm" class="chat-thread-form" hidden>
+              <label class="sr-only" for="chatThreadInput">Escribe un mensaje</label>
+              <input id="chatThreadInput" maxlength="2000" placeholder="Escribe un mensaje..." autocomplete="off" required />
+              <button class="btn btn-primary" type="submit" aria-label="Enviar mensaje">Enviar</button>
+            </form>
+          </section>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-support" class="tab-content">
       <div class="container support-center-page">
         <div class="support-center-intro">
           <span class="sub-heading">Estamos para orientarte</span>
           <h2>Soporte AgroConecta</h2>
-          <p>Cuéntanos qué necesitas hacer. El asistente orienta sobre AgroConecta; si no puede resolverlo, abre una conversación para que el administrador responda en el mismo chat.</p>
+          <p>Consulta cómo usar AgroConecta. Si la guía no resuelve tu caso, el asistente enviará el historial completo al administrador para que te responda en el mismo chat.</p>
         </div>
         <div class="support-center-grid">
           <article class="info-card">
-            <h3>Cuéntale al asistente qué necesitas</h3>
-            <p>Elige un tema o escribe tu pregunta. Si la respuesta no te ayuda, puedes transferir la conversación completa a un administrador.</p>
+            <h3>¿En qué podemos orientarte?</h3>
+            <p>Pregunta sobre cuentas, pedidos, publicaciones, pagos o transporte. El asistente te dará pasos concretos antes de ofrecerte hablar con una persona.</p>
             <button class="btn btn-primary" id="supportCenterOpenAssistant" type="button">Iniciar conversación</button>
             <details class="support-manual-contact">
               <summary>Enviar una consulta sin usar el asistente</summary>
@@ -732,7 +766,7 @@
           <article class="faq-card">
             <h3>Cómo se gestiona tu consulta</h3>
             <ol class="support-steps">
-              <li>Elige un tema o describe tu consulta; el asistente responderá con información de AgroConecta.</li>
+              <li>Elige un tema o describe qué intentabas hacer; el asistente te responderá con instrucciones de AgroConecta.</li>
               <li>Después podrás indicar si se resolvió. Si no, el historial completo se enviará al administrador.</li>
               <li>El administrador responderá en ese mismo chat, que se actualiza automáticamente mientras esté abierto.</li>
             </ol>
@@ -811,17 +845,19 @@
     </button>
     <section class="support-chat-panel" id="supportChatPanel" aria-label="Asistente de ayuda" hidden>
       <div class="chat-heading">
-        <div><strong>Asistente AgroConecta</strong><small>Respuestas sobre el uso de la plataforma</small></div>
+        <div><strong>Asistente AgroConecta</strong><small>Guía de compras, cosechas y transporte</small></div>
         <button type="button" id="supportChatClose" aria-label="Cerrar asistente">×</button>
       </div>
       <div class="chat-messages" id="supportChatMessages" aria-live="polite">
-        <p class="chat-message assistant">Hola. Puedo orientarte sobre compras, envíos, registros, devoluciones y seguridad. Si no reconozco tu consulta, te indicaré cómo contactar a una persona.</p>
+        <div class="chat-message assistant"><strong class="chat-message-author">Asistente AgroConecta</strong><span>¡Hola! Puedo guiarte para registrarte, comprar, publicar una cosecha, coordinar transporte o recuperar tu cuenta. Escribe tu pregunta o elige un tema. Si mi guía no te sirve, podrás continuar aquí con el administrador.</span></div>
       </div>
       <div class="support-topic-options" id="supportTopicOptions" aria-label="Temas de ayuda">
-        <button type="button" data-support-topic="¿Cómo me registro o recupero mi cuenta?" data-support-label="Cuenta y acceso">Cuenta y acceso</button>
-        <button type="button" data-support-topic="¿Cómo compro una cosecha publicada?" data-support-label="Compras y pedidos">Compras y pedidos</button>
-        <button type="button" data-support-topic="¿Cómo publico o edito una cosecha?" data-support-label="Publicaciones agrícolas">Publicaciones</button>
-        <button type="button" data-support-topic="¿Cómo solicito o coordino un transporte?" data-support-label="Transporte y entregas">Transporte</button>
+        <button type="button" data-support-topic="¿Cómo creo una cuenta y qué perfiles hay?" data-support-label="Cuenta y acceso">Cuenta y acceso</button>
+        <button type="button" data-support-topic="¿Cómo compro una cosecha y contacto al agricultor?" data-support-label="Compras y pedidos">Compras y pedidos</button>
+        <button type="button" data-support-topic="¿Cómo publico o edito una cosecha con foto?" data-support-label="Publicaciones agrícolas">Publicaciones</button>
+        <button type="button" data-support-topic="¿Cómo publico una ruta y hablo con el transportista?" data-support-label="Transporte y entregas">Transporte</button>
+        <button type="button" data-support-topic="¿Cómo funcionan los chats privados y el grupal?" data-support-label="Chats">Chats</button>
+        <button type="button" data-support-topic="¿AgroConecta recibe los pagos?" data-support-label="Pagos y seguridad">Pagos y seguridad</button>
       </div>
       <form class="chat-form" id="supportChatForm">
         <label class="sr-only" for="supportChatInput">Escribe tu consulta</label>
@@ -830,7 +866,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-8-7 18-3-7z"></path><path d="m11 14 5-5"></path></svg>
         </button>
       </form>
-      <p class="chat-disclaimer">Asistente automatizado con respuestas informativas; no procesa pagos ni pedidos.</p>
+      <p class="chat-disclaimer">Asistente automatizado con guía de AgroConecta; no procesa pagos ni cambia pedidos.</p>
     </section>
   </div>
 

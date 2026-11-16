@@ -28,8 +28,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let sessionUser = null;
   let activeConversation = null;
   let activeTransportRequestId = null;
+  let availableChatItems = [];
   let activeSupportTicketId = null;
   let messagePollTimer = null;
+  let messageListPollTimer = null;
   let transportMessagePollTimer = null;
   let transportRequestsPollTimer = null;
   let dashboardDataPollTimer = null;
@@ -101,6 +103,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (navMenu && navMenu.classList.contains('show')) {
       navMenu.classList.remove('show');
     }
+    if (tabId === 'tab-messages' && sessionUser) {
+      loadConversations().catch(error => showToast(error.message));
+      if (!messageListPollTimer) {
+        messageListPollTimer = window.setInterval(() => {
+          if (sessionUser && document.getElementById('tab-messages').classList.contains('active')) {
+            loadConversations().catch(error => console.error('No se pudo actualizar la lista de chats:', error));
+          }
+        }, 5000);
+      }
+    }
   }
 
   document.querySelectorAll('.tab-btn, .nav-tab').forEach(button => {
@@ -159,9 +171,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function agregarMensajeChat(message, sender, link, messageId = null) {
     if (!supportChatMessages) return;
-    const bubble = document.createElement('p');
+    const bubble = document.createElement('div');
     bubble.className = `chat-message ${sender}`;
-    bubble.textContent = message;
+    const author = document.createElement('strong');
+    author.className = 'chat-message-author';
+    author.textContent = sender === 'assistant'
+      ? 'Asistente AgroConecta'
+      : sessionUser?.nombre || 'Tú';
+    const content = document.createElement('span');
+    content.textContent = message;
+    bubble.append(author, content);
     if (messageId !== null) bubble.dataset.supportMessageId = String(messageId);
     supportChatMessages.appendChild(bubble);
     if (link) {
@@ -783,8 +802,8 @@ document.addEventListener('DOMContentLoaded', () => {
       renderCart();
       cerrarModal(cartModal);
       await loadDashboard();
-      cambiarPestana('tab-dashboard');
-      showToast('Solicitud enviada. Abre el panel para conversar con el agricultor.');
+      cambiarPestana('tab-messages');
+      showToast('Solicitud enviada. Ya puedes conversar con el agricultor en Chats.');
       try {
         const { conversations } = await apiRequest('/api/conversations');
         const conversation = conversations.find(item =>
@@ -837,11 +856,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const loggedIn = Boolean(sessionUser);
     const registerItem = document.getElementById('registerNavItem');
     const dashboardItem = document.getElementById('dashboardNavItem');
+    const messagesItem = document.getElementById('messagesNavItem');
     const contactTab = document.getElementById('tab-contacto');
     const roleEntry = document.querySelector('.nav-role-entry');
     const sellerButton = document.querySelector('.btn-seller');
     if (registerItem) registerItem.hidden = loggedIn;
     if (dashboardItem) dashboardItem.hidden = !loggedIn;
+    if (messagesItem) messagesItem.hidden = !loggedIn;
     if (contactTab) contactTab.hidden = loggedIn;
     if (roleEntry) roleEntry.hidden = loggedIn;
     if (sellerButton) sellerButton.hidden = loggedIn;
@@ -913,13 +934,19 @@ document.addEventListener('DOMContentLoaded', () => {
       activeTransportRequestId = null;
       if (messagePollTimer) window.clearInterval(messagePollTimer);
       messagePollTimer = null;
+      if (messageListPollTimer) window.clearInterval(messageListPollTimer);
+      messageListPollTimer = null;
       if (transportMessagePollTimer) window.clearInterval(transportMessagePollTimer);
       transportMessagePollTimer = null;
       if (transportRequestsPollTimer) window.clearInterval(transportRequestsPollTimer);
       transportRequestsPollTimer = null;
       if (dashboardDataPollTimer) window.clearInterval(dashboardDataPollTimer);
       dashboardDataPollTimer = null;
-      if (document.getElementById('tab-dashboard').classList.contains('active')) cambiarPestana('tab-inicio');
+      availableChatItems = [];
+      if (document.getElementById('tab-dashboard').classList.contains('active') ||
+          document.getElementById('tab-messages').classList.contains('active')) {
+        cambiarPestana('tab-inicio');
+      }
     }
   }
 
@@ -932,8 +959,14 @@ document.addEventListener('DOMContentLoaded', () => {
         <p>${role === 'Comprador' ? `Agricultor: ${escapeHTML(order.productor)}` : `Comprador: ${escapeHTML(order.comprador)}`}</p>
         <p>Entrega: ${escapeHTML(order.direccion_entrega)}</p>
         <div class="dashboard-actions">
-          <button type="button" class="btn btn-outline-dark" data-open-conversation="${order.id}" data-transportista-id="${order.transportista_id || ''}" data-conversation-type="${role === 'Distribuidor' ? 'transporte' : 'producto'}">${role === 'Distribuidor' ? 'Chat de transporte' : 'Chat de compra'}</button>
-          ${role !== 'Distribuidor' && order.transportista_id ? `<button type="button" class="btn btn-outline-dark" data-open-conversation="${order.id}" data-transportista-id="${order.transportista_id}" data-conversation-type="transporte">Chat grupal de transporte</button>` : ''}
+          ${role !== 'Distribuidor' ? `<button type="button" class="btn btn-outline-dark" data-open-order-chat="${order.id}" data-conversation-type="producto">Chat con ${role === 'Comprador' ? 'el agricultor' : 'el comprador'}</button>` : ''}
+          ${order.transportista_id ? `
+            <button type="button" class="btn btn-outline-dark" data-open-order-chat="${order.id}" data-conversation-type="transporte" data-conversation-scope="grupal">Chat grupal de transporte</button>
+            ${role === 'Comprador' ? `<button type="button" class="btn btn-outline-dark" data-open-order-chat="${order.id}" data-conversation-type="transporte" data-conversation-scope="comprador-transportista">Chat privado con transportista</button>` : ''}
+            ${role === 'Productor' ? `<button type="button" class="btn btn-outline-dark" data-open-order-chat="${order.id}" data-conversation-type="transporte" data-conversation-scope="productor-transportista">Chat privado con transportista</button>` : ''}
+            ${role === 'Distribuidor' ? `<button type="button" class="btn btn-outline-dark" data-open-order-chat="${order.id}" data-conversation-type="transporte" data-conversation-scope="comprador-transportista">Chat privado con comprador</button>
+              <button type="button" class="btn btn-outline-dark" data-open-order-chat="${order.id}" data-conversation-type="transporte" data-conversation-scope="productor-transportista">Chat privado con agricultor</button>` : ''}
+          ` : ''}
           ${role === 'Comprador' && order.requiere_transporte && !order.transportista_id ? `<button type="button" class="btn btn-outline-dark" data-action="show-offers" data-order-id="${order.id}">Ver ofertas de transporte</button>` : ''}
           ${role === 'Productor' && order.estado === 'pendiente' ? `<button type="button" class="btn btn-outline-dark" data-action="mark-ready" data-order-id="${order.id}">Marcar pedido listo</button>` : ''}
           ${role === 'Comprador' && order.estado !== 'completado' && order.estado !== 'pendiente' ? `<button type="button" class="btn btn-primary" data-action="confirm-delivery" data-order-id="${order.id}">Confirmar recepción</button>` : ''}
@@ -946,50 +979,117 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadConversations() {
     const list = document.getElementById('conversationList');
     if (!sessionUser || !list) return;
-    const { conversations } = await apiRequest('/api/conversations');
-    list.innerHTML = conversations.length ? conversations.map(conversation => `
-      <button type="button" class="conversation-option ${activeConversation === conversation.id ? 'active' : ''}" data-open-conversation="${conversation.order_id}" data-conversation-id="${conversation.id}">
-        <strong>${conversation.tipo === 'transporte' ? 'Transporte' : 'Compra'} · ${escapeHTML(conversation.nombre_producto)}</strong>
-        ${conversation.participantes ? `<small>${escapeHTML(conversation.participantes)}</small>` : ''}
-        <span>${escapeHTML(conversation.ultimo_mensaje || 'Inicia la conversación')}</span>
-      </button>
-    `).join('') : '<p class="dashboard-empty">Los chats se habilitan cuando hay un pedido.</p>';
+    const [{ conversations }, { requests }] = await Promise.all([
+      apiRequest('/api/conversations'),
+      apiRequest('/api/transport/requests')
+    ]);
+    const acceptedRequests = requests.filter(request =>
+      request.estado === 'aceptada' && Number(request.transportista_id) > 0
+    );
+    const requestOrderIds = new Set(acceptedRequests
+      .filter(request => request.order_id)
+      .map(request => Number(request.order_id)));
+    availableChatItems = [
+      ...conversations
+        .filter(conversation => !(conversation.tipo === 'transporte' &&
+          conversation.alcance === 'grupal' && requestOrderIds.has(Number(conversation.order_id))))
+        .map(conversation => ({
+          source: 'order',
+          id: Number(conversation.id),
+          conversation,
+          title: conversation.tipo === 'producto'
+            ? `Compra · ${conversation.nombre_producto}`
+            : conversation.alcance === 'grupal'
+              ? `Grupo de transporte · ${conversation.nombre_producto}`
+              : `Chat privado de transporte · ${conversation.nombre_producto}`,
+          participants: conversation.participantes || 'Participantes del pedido',
+          preview: conversation.ultimo_mensaje || 'Inicia la conversación',
+          timestamp: conversation.mensaje_fecha || conversation.created_at
+        })),
+      ...acceptedRequests.map(request => ({
+        source: 'transport-request',
+        id: Number(request.id),
+        request,
+        title: `Grupo de transporte · ${request.carga}`,
+        participants: [request.comprador, request.productor, request.transportista]
+          .filter(Boolean).join(' · ') || 'Participantes de la ruta',
+        preview: request.ultimo_mensaje || 'Coordina precio, ruta y horario',
+        timestamp: request.mensaje_fecha || request.created_at
+      }))
+    ].sort((first, second) =>
+      (Date.parse(second.timestamp) || 0) - (Date.parse(first.timestamp) || 0)
+    );
+    list.innerHTML = availableChatItems.length ? availableChatItems.map(item => {
+      const active = item.source === 'order'
+        ? !activeTransportRequestId && activeConversation === item.id
+        : Number(activeTransportRequestId) === item.id;
+      return `<button type="button" class="conversation-option ${active ? 'active' : ''}"
+        data-chat-source="${item.source}" data-chat-id="${item.id}">
+        <strong>${escapeHTML(item.title)}</strong>
+        <small>${escapeHTML(item.participants)}</small>
+        <span>${escapeHTML(item.preview)}</span>
+      </button>`;
+    }).join('') : '<p class="dashboard-empty">Tus chats aparecerán aquí cuando se cree una compra o se acepte un transporte.</p>';
   }
 
   async function openConversation(conversationId) {
-    activeConversation = Number(conversationId);
-    const response = await apiRequest(`/api/conversations/${activeConversation}/messages`);
+    const conversationIdValue = Number(conversationId);
+    const response = await apiRequest(`/api/conversations/${conversationIdValue}/messages`);
+    activeConversation = conversationIdValue;
+    activeTransportRequestId = null;
+    if (transportMessagePollTimer) window.clearInterval(transportMessagePollTimer);
+    transportMessagePollTimer = null;
     const thread = document.getElementById('chatThreadMessages');
     if (!thread) return;
-    thread.innerHTML = response.messages.map(message => `
-      <p class="thread-message ${message.usuario_id === sessionUser.id ? 'own' : ''}" data-message-id="${message.id}">
-        <strong>${escapeHTML(message.autor)}</strong><span>${escapeHTML(message.contenido)}</span>
-        <small>${escapeHTML(message.created_at)}</small>
-      </p>`).join('') || '<p class="dashboard-empty">Envía el primer mensaje para coordinar.</p>';
-    document.getElementById('chatThreadTitle').textContent = `Conversación #${activeConversation}`;
+    const chat = availableChatItems.find(item => item.source === 'order' && item.id === activeConversation);
+    document.getElementById('chatThreadTitle').textContent = chat?.title || 'Chat de AgroConecta';
+    document.getElementById('chatThreadSubtitle').textContent = chat?.participants || 'Participantes de la conversación';
+    document.getElementById('chatThreadAvatar').textContent =
+      (chat?.title || 'AC').trim().slice(0, 1).toUpperCase();
+    renderChatMessages(response.messages);
     document.getElementById('chatThreadForm').hidden = false;
     await loadConversations();
+    if (window.innerWidth <= 760) thread.scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (!messagePollTimer) messagePollTimer = window.setInterval(refreshActiveMessages, 5000);
   }
 
+  function renderChatMessages(messages, append = false) {
+    const thread = document.getElementById('chatThreadMessages');
+    if (!thread) return;
+    if (!append) thread.replaceChildren();
+    messages.forEach(message => {
+      const item = document.createElement('article');
+      item.className = `thread-message ${message.usuario_id === sessionUser.id ? 'own' : ''}`;
+      item.dataset.messageId = String(message.id);
+      const author = document.createElement('strong');
+      author.textContent = message.autor || 'Usuario';
+      const content = document.createElement('span');
+      content.textContent = message.contenido;
+      const time = document.createElement('small');
+      time.textContent = message.created_at;
+      item.append(author, content, time);
+      thread.appendChild(item);
+    });
+    if (!append && messages.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'messenger-empty';
+      empty.textContent = 'Este chat está listo. Envía el primer mensaje para coordinar.';
+      thread.appendChild(empty);
+    }
+    thread.scrollTop = thread.scrollHeight;
+  }
+
   async function refreshActiveMessages() {
-    if (!activeConversation || !sessionUser || !document.getElementById('tab-dashboard').classList.contains('active')) return;
+    if (!activeConversation || !sessionUser ||
+        !document.getElementById('tab-messages').classList.contains('active')) return;
     const thread = document.getElementById('chatThreadMessages');
     if (!thread) return;
     const lastId = Number(thread.querySelector('[data-message-id]:last-child')?.dataset.messageId) || 0;
     try {
       const { messages } = await apiRequest(`/api/conversations/${activeConversation}/messages?after=${lastId}`);
       if (messages.length) {
-        const empty = thread.querySelector('.dashboard-empty');
-        if (empty) empty.remove();
-        messages.forEach(message => {
-          const item = document.createElement('p');
-          item.className = `thread-message ${message.usuario_id === sessionUser.id ? 'own' : ''}`;
-          item.dataset.messageId = message.id;
-          item.innerHTML = `<strong>${escapeHTML(message.autor)}</strong><span>${escapeHTML(message.contenido)}</span><small>${escapeHTML(message.created_at)}</small>`;
-          thread.appendChild(item);
-        });
-        thread.scrollTop = thread.scrollHeight;
+        thread.querySelector('.messenger-empty')?.remove();
+        renderChatMessages(messages, true);
         await loadConversations();
       }
     } catch (error) {
@@ -998,23 +1098,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderTransportRequestMessages(messages) {
-    const thread = document.getElementById('transportRequestMessages');
-    if (!thread) return;
-    thread.innerHTML = messages.map(message => `
-      <p class="thread-message ${message.usuario_id === sessionUser.id ? 'own' : ''}" data-message-id="${message.id}">
-        <strong>${escapeHTML(message.autor)}</strong><span>${escapeHTML(message.contenido)}</span>
-        <small>${escapeHTML(message.created_at)}</small>
-      </p>`).join('') || '<p class="dashboard-empty">Coordina precio, punto de encuentro y horario aquí.</p>';
-    thread.scrollTop = thread.scrollHeight;
+    renderChatMessages(messages);
   }
 
   async function openTransportRequestChat(requestId) {
-    activeTransportRequestId = Number(requestId);
-    const response = await apiRequest(`/api/transport/requests/${activeTransportRequestId}/messages`);
-    const title = document.getElementById('transportRequestChatTitle');
-    if (title) title.textContent = `Chat de transporte · Solicitud #${activeTransportRequestId}`;
-    document.getElementById('transportRequestChatForm').hidden = false;
+    const requestIdValue = Number(requestId);
+    const response = await apiRequest(`/api/transport/requests/${requestIdValue}/messages`);
+    activeConversation = null;
+    if (messagePollTimer) window.clearInterval(messagePollTimer);
+    messagePollTimer = null;
+    activeTransportRequestId = requestIdValue;
+    const chat = availableChatItems.find(item =>
+      item.source === 'transport-request' && item.id === activeTransportRequestId
+    );
+    document.getElementById('chatThreadTitle').textContent = chat?.title || 'Grupo de transporte';
+    document.getElementById('chatThreadSubtitle').textContent = chat?.participants || 'Participantes de la ruta';
+    document.getElementById('chatThreadAvatar').textContent = 'T';
+    document.getElementById('chatThreadForm').hidden = false;
     renderTransportRequestMessages(response.messages);
+    await loadConversations();
+    if (window.innerWidth <= 760) {
+      document.getElementById('chatThreadMessages').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     if (!transportMessagePollTimer) {
       transportMessagePollTimer = window.setInterval(refreshTransportRequestMessages, 4000);
     }
@@ -1022,8 +1127,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function refreshTransportRequestMessages() {
     if (!activeTransportRequestId || !sessionUser ||
-        !document.getElementById('tab-dashboard').classList.contains('active')) return;
-    const thread = document.getElementById('transportRequestMessages');
+        !document.getElementById('tab-messages').classList.contains('active')) return;
+    const thread = document.getElementById('chatThreadMessages');
     if (!thread) return;
     const lastId = Number(thread.querySelector('[data-message-id]:last-child')?.dataset.messageId) || 0;
     try {
@@ -1031,16 +1136,9 @@ document.addEventListener('DOMContentLoaded', () => {
         `/api/transport/requests/${activeTransportRequestId}/messages?after=${lastId}`
       );
       if (!messages.length) return;
-      const empty = thread.querySelector('.dashboard-empty');
-      if (empty) empty.remove();
-      messages.forEach(message => {
-        const item = document.createElement('p');
-        item.className = `thread-message ${message.usuario_id === sessionUser.id ? 'own' : ''}`;
-        item.dataset.messageId = message.id;
-        item.innerHTML = `<strong>${escapeHTML(message.autor)}</strong><span>${escapeHTML(message.contenido)}</span><small>${escapeHTML(message.created_at)}</small>`;
-        thread.appendChild(item);
-      });
-      thread.scrollTop = thread.scrollHeight;
+      thread.querySelector('.messenger-empty')?.remove();
+      renderChatMessages(messages, true);
+      await loadConversations();
     } catch (error) {
       console.error('No se pudo actualizar el chat de transporte:', error);
     }
@@ -1083,9 +1181,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const { orders } = await apiRequest('/api/orders');
       const orderList = document.getElementById('dashboardOrders');
       if (orderList) orderList.innerHTML = renderOrderCards(orders, sessionUser.rol);
-      await loadConversations();
     } catch (error) {
-      console.error('No se pudieron actualizar pedidos y conversaciones:', error);
+      console.error('No se pudieron actualizar los pedidos:', error);
     } finally {
       dashboardPollInFlight = false;
     }
@@ -1126,7 +1223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <section class="dashboard-section"><h3>Mis servicios aceptados</h3><div id="dashboardOrders"></div></section>` : ''}
       <section class="dashboard-section"><h3>Tablero de transporte</h3>
         ${sessionUser.rol !== 'Distribuidor' ? `
-          <p>Publica una ruta. Si la vinculas a un pedido, el chat incluirá al comprador, al agricultor y al transportista.</p>
+          <p>Publica una ruta. Si la vinculas a un pedido, al aceptarse podrás conversar con los participantes desde la pestaña Chats.</p>
           <form id="transportRequestForm" class="dashboard-form">
             <div class="form-group"><label for="transportOrder">Pedido relacionado (opcional)</label><select id="transportOrder"><option value="">Solicitud independiente</option></select></div>
             <div class="form-row"><div class="form-group"><label for="transportCargo">Carga</label><input id="transportCargo" maxlength="120" required /></div>
@@ -1139,19 +1236,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <button class="btn btn-primary" type="submit">Publicar solicitud</button>
           </form>` : '<p>Revisa las rutas abiertas y acepta una solicitud para compartir el chat con sus participantes.</p>'}
         <div id="transportRequestList" class="dashboard-card-grid"></div>
-        <div class="transport-request-chat">
-          <h4 id="transportRequestChatTitle">Chat de transporte</h4>
-          <div id="transportRequestMessages" class="chat-thread-messages"><p class="dashboard-empty">Al aceptar una solicitud, podrás coordinar aquí.</p></div>
-          <form id="transportRequestChatForm" class="chat-thread-form" hidden><label class="sr-only" for="transportRequestChatInput">Escribe un mensaje</label><input id="transportRequestChatInput" maxlength="2000" placeholder="Coordina aquí con las partes..." required /><button class="btn btn-primary" type="submit">Enviar</button></form>
-        </div>
       </section>
-      <section class="dashboard-section"><h3>Conversaciones</h3>
-        <div class="dashboard-chat-layout"><div id="conversationList" class="conversation-list"></div>
-          <div class="chat-thread"><h4 id="chatThreadTitle">Selecciona una conversación</h4>
-            <div id="chatThreadMessages" class="chat-thread-messages"><p class="dashboard-empty">Los mensajes de pedidos se mostrarán aquí.</p></div>
-            <form id="chatThreadForm" class="chat-thread-form" hidden><label class="sr-only" for="chatThreadInput">Escribe un mensaje</label><input id="chatThreadInput" maxlength="2000" placeholder="Escribe un mensaje para coordinar..." required /><button class="btn btn-primary" type="submit">Enviar</button></form>
-          </div>
-        </div>
+      <section class="dashboard-section dashboard-chat-shortcut">
+        <div><h3>¿Necesitas hablar con un participante?</h3><p>Tus conversaciones privadas y grupales están separadas del panel para que sea más fácil seguir cada coordinación.</p></div>
+        <button class="btn btn-primary" type="button" data-open-messages>Ir a mis chats</button>
       </section>`;
 
     try {
@@ -1201,7 +1289,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const { requests } = await apiRequest('/api/transport/requests');
       renderTransportRequests(requests);
-      await loadConversations();
       if (!transportRequestsPollTimer) {
         transportRequestsPollTimer = window.setInterval(() => {
           refreshTransportRequestList().catch(error =>
@@ -1212,7 +1299,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!dashboardDataPollTimer) {
         dashboardDataPollTimer = window.setInterval(() => {
           refreshDashboardData().catch(error =>
-            console.error('No se pudieron actualizar pedidos y conversaciones:', error)
+            console.error('No se pudieron actualizar los pedidos:', error)
           );
         }, 5000);
       }
@@ -1225,30 +1312,43 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('userDashboard').addEventListener('click', async event => {
     const logout = event.target.closest('#dashboardLogout');
     if (logout) return document.getElementById('accountLogout').click();
+    if (event.target.closest('[data-open-messages]')) {
+      cambiarPestana('tab-messages');
+      return;
+    }
     const transportChatButton = event.target.closest('[data-open-transport-chat]');
     if (transportChatButton) {
-      try { await openTransportRequestChat(transportChatButton.dataset.openTransportChat); }
+      try {
+        cambiarPestana('tab-messages');
+        await loadConversations();
+        await openTransportRequestChat(transportChatButton.dataset.openTransportChat);
+      }
       catch (error) { showToast(error.message); }
       return;
     }
-    const conversationButton = event.target.closest('[data-conversation-id]');
-    if (conversationButton) {
-      try { await openConversation(conversationButton.dataset.conversationId); }
-      catch (error) { showToast(error.message); }
-      return;
-    }
-    const orderChatButton = event.target.closest('[data-open-conversation]');
+    const orderChatButton = event.target.closest('[data-open-order-chat]');
     if (orderChatButton) {
       try {
-        const { conversations } = await apiRequest('/api/conversations');
-        const conversation = conversations.find(item =>
-          Number(item.order_id) === Number(orderChatButton.dataset.openConversation) &&
-          item.tipo === (orderChatButton.dataset.conversationType || 'producto') &&
-          (item.tipo !== 'transporte' || Number(item.transportista_id) === Number(
-            orderChatButton.dataset.transportistaId || sessionUser.id
-          )));
-        if (conversation) await openConversation(conversation.id);
-        else showToast('El chat estará disponible cuando se cree la solicitud.');
+        cambiarPestana('tab-messages');
+        await loadConversations();
+        const conversation = availableChatItems.find(item =>
+          item.source === 'order' &&
+          Number(item.conversation.order_id) === Number(orderChatButton.dataset.openOrderChat) &&
+          item.conversation.tipo === (orderChatButton.dataset.conversationType || 'producto') &&
+          (item.conversation.alcance || 'grupal') ===
+            (orderChatButton.dataset.conversationScope || 'grupal'));
+        if (conversation) {
+          await openConversation(conversation.id);
+        } else {
+          const transportRequestChat = availableChatItems.find(item =>
+            item.source === 'transport-request' &&
+            Number(item.request.order_id) === Number(orderChatButton.dataset.openOrderChat) &&
+            orderChatButton.dataset.conversationType === 'transporte' &&
+            orderChatButton.dataset.conversationScope === 'grupal'
+          );
+          if (transportRequestChat) await openTransportRequestChat(transportRequestChat.id);
+          else showToast('El chat estará disponible cuando se cree la solicitud.');
+        }
       } catch (error) { showToast(error.message); }
       return;
     }
@@ -1317,6 +1417,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  document.getElementById('conversationList').addEventListener('click', async event => {
+    const button = event.target.closest('[data-chat-source]');
+    if (!button) return;
+    try {
+      if (button.dataset.chatSource === 'transport-request') {
+        await openTransportRequestChat(button.dataset.chatId);
+      } else {
+        await openConversation(button.dataset.chatId);
+      }
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
   document.getElementById('userDashboard').addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.target;
@@ -1365,20 +1479,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return loadDashboard();
       }
       if (form.matches('.transport-request-accept-form')) {
-        await apiRequest(`/api/transport/requests/${form.dataset.requestId}/accept`, {
+        const requestId = form.dataset.requestId;
+        await apiRequest(`/api/transport/requests/${requestId}/accept`, {
           method: 'POST',
           body: JSON.stringify({ precio: Number(form.elements.precio.value) })
         });
-        showToast('Solicitud aceptada. Ya puedes coordinar en el chat.');
-        return loadDashboard();
-      }
-      if (form.id === 'transportRequestChatForm') {
-        const content = document.getElementById('transportRequestChatInput').value.trim();
-        await apiRequest(`/api/transport/requests/${activeTransportRequestId}/messages`, {
-          method: 'POST', body: JSON.stringify({ contenido: content })
-        });
-        form.reset();
-        return refreshTransportRequestMessages();
+        await loadDashboard();
+        cambiarPestana('tab-messages');
+        await loadConversations();
+        await openTransportRequestChat(requestId);
+        showToast('Solicitud aceptada. Ya puedes coordinar en el chat grupal.');
+        return;
       }
       if (form.matches('.transport-offer-form')) {
         const body = JSON.stringify({
@@ -1389,14 +1500,32 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Oferta enviada al comprador.');
         return loadDashboard();
       }
-      if (form.id === 'chatThreadForm') {
-        const content = document.getElementById('chatThreadInput').value.trim();
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
+
+  document.getElementById('chatThreadForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const content = document.getElementById('chatThreadInput').value.trim();
+    try {
+      if (activeTransportRequestId) {
+        await apiRequest(`/api/transport/requests/${activeTransportRequestId}/messages`, {
+          method: 'POST', body: JSON.stringify({ contenido: content })
+        });
+      } else if (activeConversation) {
         await apiRequest(`/api/conversations/${activeConversation}/messages`, {
           method: 'POST', body: JSON.stringify({ contenido: content })
         });
-        form.reset();
-        return refreshActiveMessages();
+      } else {
+        showToast('Selecciona una conversación antes de enviar el mensaje.');
+        return;
       }
+      form.reset();
+      await (activeTransportRequestId
+        ? refreshTransportRequestMessages()
+        : refreshActiveMessages());
     } catch (error) {
       showToast(error.message);
     }
