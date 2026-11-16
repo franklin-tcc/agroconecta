@@ -339,10 +339,12 @@ const ready = new Promise((resolve, reject) => {
       await run(`CREATE TABLE IF NOT EXISTS SupportMessages (
         id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id INTEGER NOT NULL,
         usuario_id INTEGER, remitente TEXT NOT NULL CHECK(remitente IN ('usuario', 'admin')),
+        tipo_autor TEXT NOT NULL DEFAULT 'usuario',
         contenido TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (ticket_id) REFERENCES SupportTickets(id) ON DELETE CASCADE,
         FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE SET NULL
       )`);
+      await ensureColumn('SupportMessages', 'tipo_autor', "TEXT NOT NULL DEFAULT 'usuario'");
       await run(`CREATE INDEX IF NOT EXISTS idx_support_messages_ticket
         ON SupportMessages(ticket_id, id)`);
       await run(`INSERT INTO SupportMessages(ticket_id, usuario_id, remitente, contenido)
@@ -813,17 +815,31 @@ function createConversation(orderId, type, userIds, transportistaId = null) {
   });
 }
 
-function createTicket({ userId = null, email = '', subject = 'Consulta de soporte', message }) {
+function createTicket({
+  userId = null, email = '', subject = 'Consulta de soporte', message, transcript = []
+}) {
   const accessToken = crypto.randomBytes(32).toString('base64url');
   return transaction(async () => {
+    const savedTranscript = transcript.length
+      ? transcript
+      : [{ role: 'user', content: cleanText(message, 1800) }];
+    const initialMessage = savedTranscript.find(item => item.role === 'user')?.content ||
+      cleanText(message, 1800);
     const result = await run(
       `INSERT INTO SupportTickets(usuario_id, email, asunto, mensaje, access_token_hash)
         VALUES (?, ?, ?, ?, ?)`,
       [userId, normalizeEmail(email) || null, cleanText(subject, 160),
-        cleanText(message, 1800), tokenHash(accessToken)]
+        initialMessage, tokenHash(accessToken)]
     );
-    await run(`INSERT INTO SupportMessages(ticket_id, usuario_id, remitente, contenido)
-      VALUES (?, ?, 'usuario', ?)`, [result.id, userId, cleanText(message, 1800)]);
+    for (const item of savedTranscript) {
+      await run(`INSERT INTO SupportMessages(ticket_id, usuario_id, remitente, tipo_autor, contenido)
+        VALUES (?, ?, 'usuario', ?, ?)`, [
+        result.id,
+        item.role === 'user' ? userId : null,
+        item.role === 'assistant' ? 'assistant' : 'usuario',
+        cleanText(item.content, 1800)
+      ]);
+    }
     return { id: result.id, accessToken };
   });
 }
@@ -941,12 +957,14 @@ app.post('/api/auth/recovery-code', rateLimit(5, 15 * 60 * 1000), async (req, re
     return res.status(400).json({ error: 'Selecciona correo o WhatsApp e ingresa el dato asociado a tu cuenta.' });
   }
   if (channel === 'email' && (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS)) {
-    return res.status(503).json({ error: 'La recuperación por correo no está configurada en el servidor.' });
+    return res.status(503).json({ error: 'El administrador debe configurar el servicio SMTP para enviar códigos por correo.' });
   }
   if (channel === 'whatsapp' && (!process.env.WHATSAPP_PHONE_NUMBER_ID ||
       !process.env.WHATSAPP_ACCESS_TOKEN || !process.env.WHATSAPP_API_VERSION ||
       !process.env.WHATSAPP_TEMPLATE_NAME || !process.env.WHATSAPP_TEMPLATE_LANGUAGE)) {
-    return res.status(503).json({ error: 'La recuperación por WhatsApp no está configurada en el servidor.' });
+    return res.status(503).json({
+      error: 'WhatsApp requiere una cuenta de Meta WhatsApp Business, token de acceso y plantilla aprobada configurados por el administrador.'
+    });
   }
   const lookup = await findRecoveryUser(channel, identifier);
   if (lookup.error) return res.status(400).json({ error: lookup.error });
@@ -1466,10 +1484,15 @@ app.get('/api/conversations', requireAuth, async (req, res) => {
   const conversations = await all(`SELECT c.id, c.order_id, c.tipo, c.created_at,
   c.transportista_id,
     o.nombre_producto, o.estado, o.total,
+    (SELECT GROUP_CONCAT(other_user.nombre, ' · ')
+      FROM ConversationMembers other_member
+      JOIN Usuarios other_user ON other_user.id=other_member.usuario_id
+      WHERE other_member.conversation_id=c.id AND other_member.usuario_id<>?) AS participantes,
     (SELECT contenido FROM Messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje,
     (SELECT created_at FROM Messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS mensaje_fecha
     FROM Conversations c JOIN ConversationMembers cm ON cm.conversation_id=c.id
-    JOIN Orders o ON o.id=c.order_id WHERE cm.usuario_id=? ORDER BY c.id DESC`, [req.user.id]);
+    JOIN Orders o ON o.id=c.order_id WHERE cm.usuario_id=? ORDER BY c.id DESC`,
+  [req.user.id, req.user.id]);
   res.json({ conversations });
 });
 
@@ -1519,18 +1542,39 @@ app.post('/api/support/assistant', rateLimit(30, 60 * 1000), async (req, res) =>
   const message = cleanText(req.body?.mensaje, 1800);
   if (!message) return res.status(400).json({ error: 'Escribe una consulta.' });
   const match = assistantAnswers.find(([pattern]) => pattern.test(message));
-  if (match) return res.json({ respuesta: match[1], derivado: false });
+  if (match) return res.json({ respuesta: match[1], resuelto: true, derivado: false });
+  res.json({
+    respuesta: 'No encontré una respuesta confiable todavía. Puedes reformular la pregunta o, si prefieres, pedir que un administrador continúe en este mismo chat.',
+    resuelto: false,
+    derivado: false
+  });
+});
+
+app.post('/api/support/escalate', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
+  const rawTranscript = req.body?.transcript;
+  if (!Array.isArray(rawTranscript) || rawTranscript.length < 1 || rawTranscript.length > 40) {
+    return res.status(400).json({ error: 'No se encontró el historial de esta conversación. Vuelve a intentarlo.' });
+  }
+  const transcript = rawTranscript.map(item => ({
+    role: item?.role === 'assistant' ? 'assistant' : item?.role === 'user' ? 'user' : '',
+    content: cleanText(item?.content, 1800)
+  }));
+  if (transcript.some(item => !item.role || !item.content) ||
+      !transcript.some(item => item.role === 'user')) {
+    return res.status(400).json({ error: 'El historial de la conversación no es válido.' });
+  }
   const user = await currentUser(req);
+  const lastUserMessage = [...transcript].reverse().find(item => item.role === 'user');
   const ticket = await createTicket({
     userId: user?.id || null,
     email: user?.email || req.body?.email || '',
-    subject: 'Consulta derivada desde el asistente',
-    message
+    subject: cleanText(req.body?.asunto, 160) || 'Ayuda solicitada desde el asistente',
+    message: lastUserMessage.content,
+    transcript
   });
   setSupportTicketCookie(res, ticket.id, ticket.accessToken);
-  res.json({
-    respuesta: `No encontré una respuesta confiable. Registré tu consulta con el ticket #${ticket.id} para que el administrador la revise en la bandeja de soporte. Puedes continuar en este mismo chat; evita enviar contraseñas o datos de pago.`,
-    derivado: true,
+  res.status(201).json({
+    message: `La conversación completa quedó en la bandeja de soporte con el número #${ticket.id}. El administrador puede responderte aquí.`,
     ticketId: ticket.id
   });
 });
@@ -1570,8 +1614,10 @@ app.get('/api/support/tickets/:id/messages', async (req, res) => {
     return res.status(404).json({ error: 'No tienes acceso a esta conversación de soporte.' });
   }
   const after = Math.max(0, Number(req.query.after) || 0);
-  const messages = await all(`SELECT m.id, m.contenido, m.created_at, m.remitente,
+  const messages = await all(`SELECT m.id, m.contenido, m.created_at,
+      CASE WHEN m.remitente='admin' THEN 'admin' ELSE m.tipo_autor END AS remitente,
       CASE WHEN m.remitente='admin' THEN 'Soporte AgroConecta'
+        WHEN m.tipo_autor='assistant' THEN 'Asistente AgroConecta'
         ELSE COALESCE(u.nombre, 'Usuario') END AS autor
     FROM SupportMessages m LEFT JOIN Usuarios u ON u.id=m.usuario_id
     WHERE m.ticket_id=? AND m.id>? ORDER BY m.id ASC LIMIT 200`, [ticketId, after]);
@@ -1615,7 +1661,9 @@ app.get('/api/admin/tickets', requireAdminKey, async (req, res) => {
       (SELECT contenido FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje,
       (SELECT created_at FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje_fecha,
       (SELECT id FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje_id,
-      (SELECT remitente FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_remitente
+      (SELECT remitente FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_remitente,
+      (SELECT CASE WHEN m.remitente='admin' THEN 'admin' ELSE m.tipo_autor END
+        FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_tipo_autor
     FROM SupportTickets t ORDER BY t.id DESC LIMIT 200`) });
 });
 
@@ -1625,8 +1673,10 @@ app.get('/api/admin/tickets/:id/messages', requireAdminKey, async (req, res) => 
   const ticket = await get('SELECT id FROM SupportTickets WHERE id=?', [ticketId]);
   if (!ticket) return res.status(404).json({ error: 'No se encontró el ticket.' });
   const after = Math.max(0, Number(req.query.after) || 0);
-  const messages = await all(`SELECT m.id, m.contenido, m.created_at, m.remitente,
+  const messages = await all(`SELECT m.id, m.contenido, m.created_at,
+      CASE WHEN m.remitente='admin' THEN 'admin' ELSE m.tipo_autor END AS remitente,
       CASE WHEN m.remitente='admin' THEN 'Soporte AgroConecta'
+        WHEN m.tipo_autor='assistant' THEN 'Asistente AgroConecta'
         ELSE COALESCE(u.nombre, 'Usuario') END AS autor
     FROM SupportMessages m LEFT JOIN Usuarios u ON u.id=m.usuario_id
     WHERE m.ticket_id=? AND m.id>? ORDER BY m.id ASC LIMIT 200`, [ticketId, after]);

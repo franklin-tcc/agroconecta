@@ -706,33 +706,37 @@
         </div>
         <div class="support-center-grid">
           <article class="info-card">
-            <h3>Enviar una consulta</h3>
-            <form id="supportTicketForm">
-              <div class="form-group">
-                <label for="supportSubject">Asunto</label>
-                <input id="supportSubject" type="text" maxlength="160" required placeholder="Ej.: No puedo actualizar una cosecha" />
-              </div>
-              <div class="form-group">
-                <label for="supportEmail">Correo de respuesta (si no has iniciado sesión)</label>
-                <input id="supportEmail" type="email" autocomplete="email" />
-              </div>
-              <div class="form-group">
-                <label for="supportMessage">Detalle</label>
-                <textarea id="supportMessage" rows="5" maxlength="1800" required placeholder="Describe qué estabas haciendo y qué ocurrió. No incluyas contraseñas ni datos bancarios."></textarea>
-              </div>
-              <button class="btn btn-primary" type="submit">Enviar a soporte</button>
-            </form>
+            <h3>Cuéntale al asistente qué necesitas</h3>
+            <p>Elige un tema o escribe tu pregunta. Si la respuesta no te ayuda, puedes transferir la conversación completa a un administrador.</p>
+            <button class="btn btn-primary" id="supportCenterOpenAssistant" type="button">Iniciar conversación</button>
+            <details class="support-manual-contact">
+              <summary>Enviar una consulta sin usar el asistente</summary>
+              <form id="supportTicketForm">
+                <div class="form-group">
+                  <label for="supportSubject">Asunto</label>
+                  <input id="supportSubject" type="text" maxlength="160" required placeholder="Ej.: No puedo actualizar una cosecha" />
+                </div>
+                <div class="form-group">
+                  <label for="supportEmail">Correo de respuesta (si no has iniciado sesión)</label>
+                  <input id="supportEmail" type="email" autocomplete="email" />
+                </div>
+                <div class="form-group">
+                  <label for="supportMessage">Detalle</label>
+                  <textarea id="supportMessage" rows="5" maxlength="1800" required placeholder="Describe qué estabas haciendo y qué ocurrió. No incluyas contraseñas ni datos bancarios."></textarea>
+                </div>
+                <button class="btn btn-primary" type="submit">Enviar a soporte</button>
+              </form>
+            </details>
             <p class="support-ticket-status" id="supportTicketStatus" role="status" aria-live="polite"></p>
           </article>
           <article class="faq-card">
             <h3>Cómo se gestiona tu consulta</h3>
             <ol class="support-steps">
-              <li>El asistente intenta orientar sobre cuentas, compras, publicaciones, entregas y chats.</li>
-              <li>Si no puede resolverlo, tu consulta se guarda en una conversación privada de soporte.</li>
-              <li>El administrador ve la consulta en <a href="admin.html">la bandeja privada</a> y puede responder en el mismo hilo. El chat se actualiza mientras ambas páginas están abiertas.</li>
+              <li>Elige un tema o describe tu consulta; el asistente responderá con información de AgroConecta.</li>
+              <li>Después podrás indicar si se resolvió. Si no, el historial completo se enviará al administrador.</li>
+              <li>El administrador responderá en ese mismo chat, que se actualiza automáticamente mientras esté abierto.</li>
             </ol>
             <p class="form-help">El asistente usa respuestas temáticas de AgroConecta; no es una IA generativa. No envíes documentos personales, claves ni códigos de seguridad.</p>
-            <p class="form-help"><a href="admin.html">Acceso a la bandeja administrativa de soporte</a></p>
           </article>
         </div>
       </div>
@@ -812,6 +816,12 @@
       </div>
       <div class="chat-messages" id="supportChatMessages" aria-live="polite">
         <p class="chat-message assistant">Hola. Puedo orientarte sobre compras, envíos, registros, devoluciones y seguridad. Si no reconozco tu consulta, te indicaré cómo contactar a una persona.</p>
+      </div>
+      <div class="support-topic-options" id="supportTopicOptions" aria-label="Temas de ayuda">
+        <button type="button" data-support-topic="¿Cómo me registro o recupero mi cuenta?" data-support-label="Cuenta y acceso">Cuenta y acceso</button>
+        <button type="button" data-support-topic="¿Cómo compro una cosecha publicada?" data-support-label="Compras y pedidos">Compras y pedidos</button>
+        <button type="button" data-support-topic="¿Cómo publico o edito una cosecha?" data-support-label="Publicaciones agrícolas">Publicaciones</button>
+        <button type="button" data-support-topic="¿Cómo solicito o coordino un transporte?" data-support-label="Transporte y entregas">Transporte</button>
       </div>
       <form class="chat-form" id="supportChatForm">
         <label class="sr-only" for="supportChatInput">Escribe tu consulta</label>

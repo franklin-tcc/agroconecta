@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const conversationTitle = document.getElementById('adminConversationTitle');
   const conversationMessages = document.getElementById('adminConversationMessages');
   const replyForm = document.getElementById('adminReplyForm');
+  const notificationButton = document.getElementById('adminEnableNotifications');
   let adminKey = '';
   let activeTicketId = null;
   let pollTimer = null;
@@ -44,9 +45,18 @@ document.addEventListener('DOMContentLoaded', () => {
     tickets.forEach(ticket => {
       const card = document.createElement('article');
       card.className = 'admin-ticket';
+      card.dataset.ticketId = String(ticket.id);
 
       const title = document.createElement('h2');
       title.textContent = `Consulta #${ticket.id}: ${ticket.asunto}`;
+      if (ticket.estado === 'abierto' ||
+          (ticket.ultimo_tipo_autor === 'usuario' && ticket.estado !== 'resuelto')) {
+        card.classList.add('admin-ticket-needs-attention');
+        const badge = document.createElement('span');
+        badge.className = 'admin-ticket-badge';
+        badge.textContent = 'Requiere atención';
+        title.append(' ', badge);
+      }
 
       const metadata = document.createElement('p');
       metadata.className = 'admin-ticket-meta';
@@ -54,13 +64,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const message = document.createElement('p');
       message.className = 'admin-ticket-message';
-      message.textContent = ticket.ultimo_mensaje || ticket.mensaje;
+      message.textContent = ticket.ultimo_tipo_autor === 'assistant'
+        ? ticket.mensaje
+        : ticket.ultimo_mensaje || ticket.mensaje;
 
       const controls = document.createElement('div');
       controls.className = 'admin-ticket-controls';
 
       const open = document.createElement('button');
       open.className = 'btn btn-primary';
+      open.dataset.ticketOpen = 'true';
       open.type = 'button';
       open.textContent = 'Abrir chat';
       open.addEventListener('click', () => openTicket(ticket));
@@ -109,7 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!append) conversationMessages.replaceChildren();
     messages.forEach(message => {
       const item = document.createElement('article');
-      item.className = `admin-message ${message.remitente === 'admin' ? 'admin' : 'user'}`;
+      const sender = ['admin', 'assistant'].includes(message.remitente)
+        ? message.remitente : 'user';
+      item.className = `admin-message ${sender}`;
       item.dataset.messageId = String(message.id);
       const author = document.createElement('strong');
       author.textContent = message.autor;
@@ -145,11 +160,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!Array.isArray(result.tickets)) {
       throw new Error('El servidor devolvió una respuesta de consultas inválida.');
     }
+    const userActivity = [];
     let newUserMessages = 0;
     result.tickets.forEach(ticket => {
       const previousId = knownLastMessageIds.get(ticket.id);
-      if (notify && previousId && ticket.ultimo_remitente === 'usuario' &&
-          Number(ticket.ultimo_mensaje_id) > previousId) newUserMessages += 1;
+      const newTicket = previousId === undefined && ticket.estado === 'abierto';
+      const userReplied = previousId !== undefined &&
+        ticket.ultimo_tipo_autor === 'usuario' &&
+        Number(ticket.ultimo_mensaje_id) > previousId;
+      if (notify && (newTicket || userReplied)) {
+        newUserMessages += 1;
+        userActivity.push(ticket);
+      }
     });
     knownLastMessageIds = new Map(result.tickets.map(ticket =>
       [ticket.id, Number(ticket.ultimo_mensaje_id) || 0]
@@ -158,11 +180,49 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newUserMessages) {
       setStatus(`${newUserMessages} consulta(s) nueva(s) o con respuesta del usuario.`);
       document.title = `(${newUserMessages}) Soporte | AgroConecta`;
+      userActivity.forEach(ticket => showTicketNotification(ticket));
     } else if (!silent) {
       setStatus(`${result.tickets.length} consulta(s) cargada(s).`);
       document.title = 'Bandeja de soporte | AgroConecta';
     }
     await refreshActiveTicket();
+  }
+
+  function showTicketNotification(ticket) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const notification = new Notification(`Nueva consulta #${ticket.id}`, {
+      body: `${ticket.asunto}: ${ticket.ultimo_tipo_autor === 'assistant'
+        ? ticket.mensaje : ticket.ultimo_mensaje || ticket.mensaje}`
+    });
+    notification.onclick = () => {
+      window.focus();
+      const openButton = ticketList.querySelector(
+        `[data-ticket-id="${ticket.id}"] [data-ticket-open]`
+      );
+      openButton?.click();
+      notification.close();
+    };
+  }
+
+  notificationButton.addEventListener('click', async () => {
+    if (!('Notification' in window)) {
+      setStatus('Este navegador no admite notificaciones del escritorio.', true);
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        notificationButton.textContent = 'Avisos del navegador activados';
+        setStatus('Recibirás avisos mientras la bandeja esté abierta.');
+      } else {
+        setStatus('El navegador no autorizó las notificaciones.', true);
+      }
+    } catch (error) {
+      setStatus(`No se pudo activar las notificaciones: ${error.message}`, true);
+    }
+  });
+  if ('Notification' in window && Notification.permission === 'granted') {
+    notificationButton.textContent = 'Avisos del navegador activados';
   }
 
   loginForm.addEventListener('submit', async event => {

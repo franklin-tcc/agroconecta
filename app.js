@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let messagePollTimer = null;
   let transportMessagePollTimer = null;
   let transportRequestsPollTimer = null;
+  let dashboardDataPollTimer = null;
+  let dashboardPollInFlight = false;
   let supportMessagePollTimer = null;
   let resetToken = new URLSearchParams(window.location.search).get('restablecer');
 
@@ -140,13 +142,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const supportChatToggle = document.getElementById('supportChatToggle');
   const supportChatMessages = document.getElementById('supportChatMessages');
   const supportChatForm = document.getElementById('supportChatForm');
+  const supportTopicOptions = document.getElementById('supportTopicOptions');
+  const supportTranscriptStorageKey = 'agro_support_transcript';
+  let supportTranscript = [];
+  let supportTopic = 'Consulta desde el asistente';
+  try {
+    const storedTranscript = JSON.parse(sessionStorage.getItem(supportTranscriptStorageKey) || '[]');
+    if (Array.isArray(storedTranscript)) {
+      supportTranscript = storedTranscript.filter(item =>
+        ['user', 'assistant'].includes(item?.role) && typeof item.content === 'string'
+      ).slice(-40);
+    }
+  } catch (error) {
+    console.error('No se pudo restaurar el historial local del asistente:', error);
+  }
 
   function agregarMensajeChat(message, sender, link, messageId = null) {
     if (!supportChatMessages) return;
     const bubble = document.createElement('p');
     bubble.className = `chat-message ${sender}`;
     bubble.textContent = message;
-    if (messageId) bubble.dataset.supportMessageId = String(messageId);
+    if (messageId !== null) bubble.dataset.supportMessageId = String(messageId);
     supportChatMessages.appendChild(bubble);
     if (link) {
       const linkElement = link === '#tab-support' ? document.createElement('button') : document.createElement('a');
@@ -170,18 +186,76 @@ document.addEventListener('DOMContentLoaded', () => {
     if (open) document.getElementById('supportChatInput')?.focus();
   }
 
+  function persistSupportTranscript() {
+    try {
+      sessionStorage.setItem(supportTranscriptStorageKey, JSON.stringify(supportTranscript.slice(-40)));
+    } catch (error) {
+      console.error('No se pudo conservar el historial del asistente:', error);
+    }
+  }
+
+  function addSupportTranscriptMessage(role, content) {
+    const message = { role, content };
+    supportTranscript.push(message);
+    supportTranscript = supportTranscript.slice(-40);
+    persistSupportTranscript();
+    agregarMensajeChat(content, role === 'assistant' ? 'assistant' : 'user');
+  }
+
+  function removeSupportFeedback() {
+    supportChatMessages?.querySelector('[data-support-feedback]')?.remove();
+  }
+
+  function showSupportTopics(show = true) {
+    if (supportTopicOptions) supportTopicOptions.hidden = !show;
+  }
+
+  function showResolutionPrompt(answerResolved) {
+    removeSupportFeedback();
+    showSupportTopics(false);
+    const feedback = document.createElement('div');
+    feedback.className = 'support-resolution';
+    feedback.dataset.supportFeedback = 'true';
+    const question = document.createElement('p');
+    question.textContent = answerResolved
+      ? '¿Se resolvió tu duda?'
+      : 'No pude resolverla con seguridad. ¿Quieres contactar con un administrador?';
+    const controls = document.createElement('div');
+    controls.className = 'support-resolution-actions';
+    const first = document.createElement('button');
+    first.type = 'button';
+    first.dataset.supportDecision = answerResolved ? 'resolved' : 'continue';
+    first.textContent = answerResolved ? 'Sí, gracias' : 'Seguir preguntando';
+    const second = document.createElement('button');
+    second.type = 'button';
+    second.dataset.supportDecision = answerResolved ? 'unresolved' : 'escalate';
+    second.textContent = answerResolved ? 'No, necesito ayuda' : 'Contactar administrador';
+    controls.append(first, second);
+    feedback.append(question, controls);
+    supportChatMessages?.appendChild(feedback);
+    supportChatMessages.scrollTop = supportChatMessages.scrollHeight;
+  }
+
   supportChatToggle?.addEventListener('click', () => setChatOpen(supportChatPanel.hidden));
   document.getElementById('supportChatClose')?.addEventListener('click', () => setChatOpen(false));
   async function loadSupportTicket(ticketId, replace = false) {
     const { messages } = await apiRequest(`/api/support/tickets/${ticketId}/messages`);
-    if (replace) supportChatMessages.replaceChildren();
+    if (replace) {
+      supportChatMessages.replaceChildren();
+      showSupportTopics(false);
+    }
     const lastId = Number(supportChatMessages.querySelector('[data-support-message-id]:last-child')?.dataset.supportMessageId) || 0;
     messages.filter(message => replace || message.id > lastId).forEach(message => {
-      agregarMensajeChat(message.contenido, message.remitente === 'admin' ? 'assistant' : 'user', null, message.id);
+      const sender = message.remitente === 'admin' || message.remitente === 'assistant'
+        ? message.remitente : 'user';
+      agregarMensajeChat(message.contenido, sender, null, message.id);
     });
   }
   function activateSupportTicket(ticketId) {
     activeSupportTicketId = Number(ticketId);
+    supportTranscript = [];
+    try { sessionStorage.removeItem(supportTranscriptStorageKey); }
+    catch (error) { console.error('No se pudo limpiar el historial local del asistente:', error); }
     try { sessionStorage.setItem('agro_support_ticket_id', String(activeSupportTicketId)); }
     catch (error) { console.error('No se pudo conservar el número de consulta en esta pestaña:', error); }
     loadSupportTicket(activeSupportTicketId, true).catch(error => {
@@ -197,12 +271,93 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 4000);
     }
   }
+  async function sendSupportQuestion(message) {
+    if (!message || activeSupportTicketId) return;
+    removeSupportFeedback();
+    showSupportTopics(false);
+    addSupportTranscriptMessage('user', message);
+    try {
+      const response = await apiRequest('/api/support/assistant', {
+        method: 'POST',
+        body: JSON.stringify({ mensaje: message })
+      });
+      addSupportTranscriptMessage('assistant', response.respuesta);
+      showResolutionPrompt(response.resuelto !== false);
+    } catch (error) {
+      console.error('No se pudo consultar el asistente:', error);
+      addSupportTranscriptMessage(
+        'assistant',
+        'No pude consultar el asistente en este momento. Puedes volver a intentarlo o abrir el formulario de soporte.'
+      );
+      showSupportTopics(true);
+    }
+  }
+
+  async function escalateSupportConversation() {
+    addSupportTranscriptMessage('user', 'No, necesito ayuda de una persona.');
+    addSupportTranscriptMessage('assistant', 'De acuerdo. Estoy enviando esta conversación completa al administrador.');
+    removeSupportFeedback();
+    try {
+      const result = await apiRequest('/api/support/escalate', {
+        method: 'POST',
+        body: JSON.stringify({
+          asunto: supportTopic,
+          transcript: supportTranscript
+        })
+      });
+      activateSupportTicket(result.ticketId);
+      setChatOpen(true);
+      showToast(result.message);
+    } catch (error) {
+      console.error('No se pudo transferir la conversación a soporte:', error);
+      addSupportTranscriptMessage(
+        'assistant',
+        `${error.message} Tu conversación sigue guardada en esta pestaña; vuelve a elegir “No, necesito ayuda” para reintentar.`
+      );
+      showResolutionPrompt(false);
+    }
+  }
+
   let savedSupportTicketId = 0;
   try { savedSupportTicketId = Number(sessionStorage.getItem('agro_support_ticket_id')); }
   catch (error) { console.error('No se pudo restaurar la consulta de soporte:', error); }
   if (Number.isInteger(savedSupportTicketId) && savedSupportTicketId > 0) {
     activateSupportTicket(savedSupportTicketId);
+  } else if (supportTranscript.length) {
+    supportChatMessages.replaceChildren();
+    supportTranscript.forEach(item => agregarMensajeChat(
+      item.content, item.role === 'assistant' ? 'assistant' : 'user'
+    ));
+    showResolutionPrompt(true);
   }
+  supportTopicOptions?.addEventListener('click', event => {
+    const button = event.target.closest('[data-support-topic]');
+    if (!button) return;
+    supportTopic = button.dataset.supportLabel || 'Consulta desde el asistente';
+    sendSupportQuestion(button.dataset.supportTopic);
+  });
+  document.getElementById('supportCenterOpenAssistant')?.addEventListener('click', () => {
+    setChatOpen(true);
+    cambiarPestana('tab-support');
+  });
+  supportChatMessages?.addEventListener('click', event => {
+    const button = event.target.closest('[data-support-decision]');
+    if (!button) return;
+    const decision = button.dataset.supportDecision;
+    removeSupportFeedback();
+    if (decision === 'resolved') {
+      addSupportTranscriptMessage('user', 'Sí, gracias. Se resolvió mi duda.');
+      addSupportTranscriptMessage('assistant', 'Me alegra haberte ayudado. Si tienes otra consulta, elige un tema o escríbela aquí.');
+      supportTopic = 'Consulta desde el asistente';
+      showSupportTopics(true);
+    } else if (decision === 'continue') {
+      addSupportTranscriptMessage('user', 'Quiero seguir preguntando.');
+      addSupportTranscriptMessage('assistant', 'Claro. Cuéntame un poco más o selecciona uno de los temas sugeridos.');
+      showSupportTopics(true);
+    } else if (decision === 'unresolved' || decision === 'escalate') {
+      escalateSupportConversation();
+    }
+  });
   supportChatForm?.addEventListener('submit', async event => {
     event.preventDefault();
     const input = document.getElementById('supportChatInput');
@@ -218,20 +373,10 @@ document.addEventListener('DOMContentLoaded', () => {
         agregarMensajeChat(sent.contenido, 'user', null, sent.id);
         return;
       }
-      agregarMensajeChat(message, 'user');
-      const response = await apiRequest('/api/support/assistant', {
-        method: 'POST',
-        body: JSON.stringify({ mensaje: message })
-      });
-      if (response.ticketId) {
-        activateSupportTicket(response.ticketId);
-        agregarMensajeChat(response.respuesta, 'assistant');
-      } else {
-        agregarMensajeChat(response.respuesta, 'assistant');
-      }
+      await sendSupportQuestion(message);
     } catch (error) {
-      console.error('No se pudo consultar el asistente:', error);
-      agregarMensajeChat('El asistente no está disponible ahora. Entra a Soporte para dejar una consulta guardada para el administrador.', 'assistant', '#tab-support');
+      console.error('No se pudo enviar el mensaje de soporte:', error);
+      agregarMensajeChat(error.message, 'assistant');
     }
   });
 
@@ -625,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const button = document.getElementById('checkoutSubmit');
     button.disabled = true;
     try {
-      await apiRequest('/api/orders', {
+      const { orderIds } = await apiRequest('/api/orders', {
         method: 'POST',
         body: JSON.stringify({
           items: cart.map(item => ({ product_id: item.serverProductId, cantidad: item.cantidad })),
@@ -640,6 +785,15 @@ document.addEventListener('DOMContentLoaded', () => {
       await loadDashboard();
       cambiarPestana('tab-dashboard');
       showToast('Solicitud enviada. Abre el panel para conversar con el agricultor.');
+      try {
+        const { conversations } = await apiRequest('/api/conversations');
+        const conversation = conversations.find(item =>
+          Number(item.order_id) === Number(orderIds[0]) && item.tipo === 'producto'
+        );
+        if (conversation) await openConversation(conversation.id);
+      } catch (error) {
+        console.error('El pedido se creó, pero no se pudo abrir su chat automáticamente:', error);
+      }
     } catch (error) {
       showToast(error.message);
     } finally {
@@ -763,6 +917,8 @@ document.addEventListener('DOMContentLoaded', () => {
       transportMessagePollTimer = null;
       if (transportRequestsPollTimer) window.clearInterval(transportRequestsPollTimer);
       transportRequestsPollTimer = null;
+      if (dashboardDataPollTimer) window.clearInterval(dashboardDataPollTimer);
+      dashboardDataPollTimer = null;
       if (document.getElementById('tab-dashboard').classList.contains('active')) cambiarPestana('tab-inicio');
     }
   }
@@ -776,10 +932,10 @@ document.addEventListener('DOMContentLoaded', () => {
         <p>${role === 'Comprador' ? `Agricultor: ${escapeHTML(order.productor)}` : `Comprador: ${escapeHTML(order.comprador)}`}</p>
         <p>Entrega: ${escapeHTML(order.direccion_entrega)}</p>
         <div class="dashboard-actions">
-          <button type="button" class="btn btn-outline-dark" data-open-conversation="${order.id}" data-transportista-id="${order.transportista_id || ''}" data-conversation-type="${role === 'Distribuidor' || (role === 'Comprador' && order.transportista_id) ? 'transporte' : 'producto'}">${role === 'Distribuidor' || (role === 'Comprador' && order.transportista_id) ? 'Chat de transporte' : 'Chat de compra'}</button>
+          <button type="button" class="btn btn-outline-dark" data-open-conversation="${order.id}" data-transportista-id="${order.transportista_id || ''}" data-conversation-type="${role === 'Distribuidor' ? 'transporte' : 'producto'}">${role === 'Distribuidor' ? 'Chat de transporte' : 'Chat de compra'}</button>
+          ${role !== 'Distribuidor' && order.transportista_id ? `<button type="button" class="btn btn-outline-dark" data-open-conversation="${order.id}" data-transportista-id="${order.transportista_id}" data-conversation-type="transporte">Chat grupal de transporte</button>` : ''}
           ${role === 'Comprador' && order.requiere_transporte && !order.transportista_id ? `<button type="button" class="btn btn-outline-dark" data-action="show-offers" data-order-id="${order.id}">Ver ofertas de transporte</button>` : ''}
           ${role === 'Productor' && order.estado === 'pendiente' ? `<button type="button" class="btn btn-outline-dark" data-action="mark-ready" data-order-id="${order.id}">Marcar pedido listo</button>` : ''}
-          ${role === 'Comprador' && order.transportista_id ? `<button type="button" class="btn btn-outline-dark" data-open-conversation="${order.id}" data-conversation-type="transporte">Chat de transporte</button>` : ''}
           ${role === 'Comprador' && order.estado !== 'completado' && order.estado !== 'pendiente' ? `<button type="button" class="btn btn-primary" data-action="confirm-delivery" data-order-id="${order.id}">Confirmar recepción</button>` : ''}
         </div>
         <div class="transport-offers" id="order-offers-${order.id}" hidden></div>
@@ -794,6 +950,7 @@ document.addEventListener('DOMContentLoaded', () => {
     list.innerHTML = conversations.length ? conversations.map(conversation => `
       <button type="button" class="conversation-option ${activeConversation === conversation.id ? 'active' : ''}" data-open-conversation="${conversation.order_id}" data-conversation-id="${conversation.id}">
         <strong>${conversation.tipo === 'transporte' ? 'Transporte' : 'Compra'} · ${escapeHTML(conversation.nombre_producto)}</strong>
+        ${conversation.participantes ? `<small>${escapeHTML(conversation.participantes)}</small>` : ''}
         <span>${escapeHTML(conversation.ultimo_mensaje || 'Inicia la conversación')}</span>
       </button>
     `).join('') : '<p class="dashboard-empty">Los chats se habilitan cuando hay un pedido.</p>';
@@ -918,6 +1075,22 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTransportRequests(requests);
   }
 
+  async function refreshDashboardData() {
+    if (!sessionUser || dashboardPollInFlight ||
+        !document.getElementById('tab-dashboard').classList.contains('active')) return;
+    dashboardPollInFlight = true;
+    try {
+      const { orders } = await apiRequest('/api/orders');
+      const orderList = document.getElementById('dashboardOrders');
+      if (orderList) orderList.innerHTML = renderOrderCards(orders, sessionUser.rol);
+      await loadConversations();
+    } catch (error) {
+      console.error('No se pudieron actualizar pedidos y conversaciones:', error);
+    } finally {
+      dashboardPollInFlight = false;
+    }
+  }
+
   async function loadDashboard() {
     const dashboard = document.getElementById('userDashboard');
     if (!dashboard || !sessionUser) return;
@@ -1035,6 +1208,13 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('No se pudo actualizar el tablero de transporte:', error)
           );
         }, 8000);
+      }
+      if (!dashboardDataPollTimer) {
+        dashboardDataPollTimer = window.setInterval(() => {
+          refreshDashboardData().catch(error =>
+            console.error('No se pudieron actualizar pedidos y conversaciones:', error)
+          );
+        }, 5000);
       }
     } catch (error) {
       console.error('No se pudo cargar el panel:', error);

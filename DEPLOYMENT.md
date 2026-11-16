@@ -32,7 +32,7 @@ No agregues `AGROCONECTA_DB` a Render. Si Turso no está configurado, el servido
 
 La recuperación por correo necesita que configures `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`. Para Gmail se requiere una contraseña de aplicación, no la contraseña normal de la cuenta.
 
-La recuperación por WhatsApp es opcional y requiere una aplicación de Meta WhatsApp Cloud API, un número habilitado y una plantilla aprobada. Configura `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_API_VERSION`, `WHATSAPP_TEMPLATE_NAME` y `WHATSAPP_TEMPLATE_LANGUAGE`. Sin esa configuración, la aplicación informa que el canal no está disponible.
+La recuperación por WhatsApp es opcional y requiere una aplicación de Meta WhatsApp Cloud API, un número de WhatsApp Business habilitado y una plantilla aprobada que acepte el código como parámetro. Configura `WHATSAPP_PHONE_NUMBER_ID` (identificador del número emisor de Business), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_API_VERSION`, `WHATSAPP_TEMPLATE_NAME` y `WHATSAPP_TEMPLATE_LANGUAGE`. El número celular que el usuario registró es el destinatario; el número público de contacto de AgroConecta o una línea Bitel por sí solos no pueden enviar códigos automáticamente. Sin las credenciales de Business, la aplicación avisa que el canal no está disponible.
 
 La bandeja de soporte es `admin.html`; su API requiere el valor secreto de `ADMIN_API_KEY`. La bandeja consulta mensajes mientras permanece abierta; no se envían avisos externos de nuevos tickets.
 

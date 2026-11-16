@@ -12,6 +12,13 @@ process.env.ADMIN_API_KEY = 'test-admin-key';
 process.env.SMTP_HOST = '';
 process.env.SMTP_USER = '';
 process.env.SMTP_PASS = '';
+[
+  'WHATSAPP_PHONE_NUMBER_ID',
+  'WHATSAPP_ACCESS_TOKEN',
+  'WHATSAPP_API_VERSION',
+  'WHATSAPP_TEMPLATE_NAME',
+  'WHATSAPP_TEMPLATE_LANGUAGE'
+].forEach(key => { process.env[key] = ''; });
 
 function createExistingSchema() {
   const setup = new sqlite3.Database(process.env.AGROCONECTA_DB);
@@ -122,7 +129,7 @@ test('accounts, purchases, transport offers, chats and support use the existing 
   let driverCookie;
   try {
     const buyer = await request('/api/auth/register', {
-      method: 'POST', body: account('Comprador', 'comprador@example.com', 1)
+      method: 'POST', body: { ...account('Comprador', 'comprador@example.com', 1), telefono: '912345678' }
     });
     assert.equal(buyer.status, 201);
     buyerCookie = buyer.cookie;
@@ -217,6 +224,7 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     const buyerChats = await request('/api/conversations', { cookie: buyerCookie });
     const purchaseChat = buyerChats.body.conversations.find(chat => chat.tipo === 'producto');
     assert.ok(purchaseChat);
+    assert.equal(purchaseChat.participantes, 'Usuario 3');
     const sentMessage = await request(`/api/conversations/${purchaseChat.id}/messages`, {
       method: 'POST', cookie: buyerCookie, body: { contenido: '¿Cuándo estará lista la cosecha?' }
     });
@@ -301,11 +309,26 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     );
     assert.equal(accepted.status, 200);
 
-    const escalated = await request('/api/support/assistant', {
+    const assistantAnswer = await request('/api/support/assistant', {
       method: 'POST', cookie: buyerCookie, body: { mensaje: 'Mi situación no aparece en las opciones habituales' }
     });
-    assert.equal(escalated.status, 200);
-    assert.equal(escalated.body.derivado, true);
+    assert.equal(assistantAnswer.status, 200);
+    assert.equal(assistantAnswer.body.resuelto, false);
+    assert.equal(assistantAnswer.body.ticketId, undefined);
+    const escalated = await request('/api/support/escalate', {
+      method: 'POST',
+      cookie: buyerCookie,
+      body: {
+        asunto: 'Ayuda con pedidos',
+        transcript: [
+          { role: 'user', content: 'Mi situación no aparece en las opciones habituales' },
+          { role: 'assistant', content: assistantAnswer.body.respuesta },
+          { role: 'user', content: 'No, necesito ayuda de una persona.' },
+          { role: 'assistant', content: 'Estoy pasando esta conversación al administrador.' }
+        ]
+      }
+    });
+    assert.equal(escalated.status, 201);
     const supportTicketId = escalated.body.ticketId;
     const buyerSupportMessages = await request(
       `/api/support/tickets/${supportTicketId}/messages`, { cookie: buyerCookie }
@@ -313,6 +336,9 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     assert.equal(buyerSupportMessages.status, 200);
     assert.equal(buyerSupportMessages.body.messages[0].contenido,
       'Mi situación no aparece en las opciones habituales');
+    assert.equal(buyerSupportMessages.body.messages[1].remitente, 'assistant');
+    assert.equal(buyerSupportMessages.body.messages[1].autor, 'Asistente AgroConecta');
+    assert.equal(buyerSupportMessages.body.messages.length, 4);
     const foreignSupportMessages = await request(
       `/api/support/tickets/${supportTicketId}/messages`, { cookie: farmerCookie }
     );
@@ -325,6 +351,8 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     assert.equal(authorizedQueue.status, 200);
     const queuedTickets = (await authorizedQueue.json()).tickets;
     assert.equal(queuedTickets.length, 1);
+    assert.equal(queuedTickets[0].ultimo_tipo_autor, 'assistant');
+    assert.equal(queuedTickets[0].estado, 'abierto');
     const anonymousTicket = await request('/api/support/tickets', {
       method: 'POST',
       body: {
@@ -352,10 +380,21 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     });
     assert.equal(adminReply.status, 201);
     const userSeesAdminReply = await request(
-      `/api/support/tickets/${supportTicketId}/messages?after=1`, { cookie: buyerCookie }
+      `/api/support/tickets/${supportTicketId}/messages?after=4`, { cookie: buyerCookie }
     );
     assert.equal(userSeesAdminReply.body.messages[0].remitente, 'admin');
     assert.equal(userSeesAdminReply.body.messages[0].contenido, 'Ya estamos revisando tu caso.');
+    const userFollowup = await request(`/api/support/tickets/${supportTicketId}/messages`, {
+      method: 'POST', cookie: buyerCookie, body: { mensaje: 'Gracias, agrego un dato más.' }
+    });
+    assert.equal(userFollowup.status, 201);
+    const queueWithUserFollowup = await fetch(`${baseUrl}/api/admin/tickets`, {
+      headers: { Authorization: 'Bearer test-admin-key' }
+    });
+    const ticketsAfterFollowup = (await queueWithUserFollowup.json()).tickets;
+    const followedUpTicket = ticketsAfterFollowup.find(ticket => ticket.id === supportTicketId);
+    assert.equal(followedUpTicket.ultimo_tipo_autor, 'usuario');
+    assert.equal(followedUpTicket.ultimo_mensaje, 'Gracias, agrego un dato más.');
     const updateTicket = await request(`/api/admin/tickets/${queuedTickets[0].id}`, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer test-admin-key' },
@@ -371,11 +410,53 @@ test('accounts, purchases, transport offers, chats and support use the existing 
       method: 'POST', body: { canal: 'email', identificador: 'comprador@example.com' }
     });
     assert.equal(missingEmailCodeConfiguration.status, 503);
+    const missingWhatsAppConfiguration = await request('/api/auth/recovery-code', {
+      method: 'POST', body: { canal: 'whatsapp', identificador: '912345678' }
+    });
+    assert.equal(missingWhatsAppConfiguration.status, 503);
     const invalidRecoveryCode = await request('/api/auth/verify-recovery-code', {
       method: 'POST',
       body: { canal: 'email', identificador: 'comprador@example.com', codigo: '123456' }
     });
     assert.equal(invalidRecoveryCode.status, 400);
+
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '1234567890';
+    process.env.WHATSAPP_ACCESS_TOKEN = 'test-token';
+    process.env.WHATSAPP_API_VERSION = 'v23.0';
+    process.env.WHATSAPP_TEMPLATE_NAME = 'agroconecta_recovery';
+    process.env.WHATSAPP_TEMPLATE_LANGUAGE = 'es_PE';
+    const originalFetch = global.fetch;
+    let recoveryTemplatePayload;
+    global.fetch = async (url, options) => {
+      if (String(url).startsWith('https://graph.facebook.com/')) {
+        recoveryTemplatePayload = JSON.parse(options.body);
+        return { ok: true, status: 200 };
+      }
+      return originalFetch(url, options);
+    };
+    try {
+      const sentWhatsAppCode = await request('/api/auth/recovery-code', {
+        method: 'POST', body: { canal: 'whatsapp', identificador: '912345678' }
+      });
+      assert.equal(sentWhatsAppCode.status, 200);
+      assert.equal(recoveryTemplatePayload.to, '51912345678');
+      const whatsappRecoveryCode = recoveryTemplatePayload.template.components[0].parameters[0].text;
+      const verifiedWhatsAppCode = await request('/api/auth/verify-recovery-code', {
+        method: 'POST',
+        body: { canal: 'whatsapp', identificador: '912345678', codigo: whatsappRecoveryCode }
+      });
+      assert.equal(verifiedWhatsAppCode.status, 200);
+      assert.ok(verifiedWhatsAppCode.body.token);
+    } finally {
+      global.fetch = originalFetch;
+      [
+        'WHATSAPP_PHONE_NUMBER_ID',
+        'WHATSAPP_ACCESS_TOKEN',
+        'WHATSAPP_API_VERSION',
+        'WHATSAPP_TEMPLATE_NAME',
+        'WHATSAPP_TEMPLATE_LANGUAGE'
+      ].forEach(key => { process.env[key] = ''; });
+    }
 
     const buyerId = buyer.body.user.id;
     const resetToken = crypto.randomBytes(32).toString('base64url');

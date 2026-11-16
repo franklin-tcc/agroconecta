@@ -2108,6 +2108,66 @@ body {
   font-weight: 800;
 }
 
+.support-topic-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 12px 12px;
+  background: #f6f8f8;
+}
+
+.support-topic-options[hidden] {
+  display: none;
+}
+
+.support-topic-options button,
+.support-resolution-actions button {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #fff;
+  color: var(--primary-color);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.support-resolution {
+  display: grid;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 95%;
+  padding: 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.support-resolution p {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.82rem;
+}
+
+.support-resolution-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.support-resolution-actions button:last-child {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.chat-message.admin {
+  align-self: flex-start;
+  border: 1px solid rgba(7, 94, 99, 0.18);
+  background: var(--primary-soft);
+  color: var(--text-dark);
+}
+
 .chat-form {
   display: flex;
   gap: 8px;
@@ -2141,6 +2201,18 @@ body {
   font-size: 0.68rem;
   line-height: 1.4;
   text-align: center;
+}
+
+.support-manual-contact {
+  margin-top: 18px;
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+.support-manual-contact form {
+  margin-top: 16px;
+  color: var(--text-dark);
+  font-weight: 400;
 }
 
 .sr-only {
@@ -3186,6 +3258,22 @@ body {
   gap: 12px;
 }
 
+.admin-ticket-needs-attention {
+  border-color: #e1a534;
+  box-shadow: 0 0 0 2px rgba(225, 165, 52, 0.14);
+}
+
+.admin-ticket-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff4d8;
+  color: #79500a;
+  font-size: 0.68rem;
+  vertical-align: middle;
+}
+
 .admin-conversation {
   display: grid;
   gap: 14px;
@@ -3224,6 +3312,11 @@ body {
 .admin-message.admin {
   justify-self: end;
   background: var(--primary-soft);
+}
+
+.admin-message.assistant {
+  border: 1px solid rgba(7, 94, 99, 0.18);
+  background: #f0f8f6;
 }
 
 .admin-message p {
