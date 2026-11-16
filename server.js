@@ -79,6 +79,21 @@ function normalizeRow(row, columns = []) {
   return plain;
 }
 
+function run(sql, params = []) {
+  if (tursoClient) {
+    return remoteExecutor().execute({ sql, args: params }).then(result => ({
+      id: result.lastInsertRowid == null ? 0 : Number(result.lastInsertRowid),
+      changes: Number(result.rowsAffected || 0)
+    }));
+  }
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function onRun(error) {
+      if (error) return reject(error);
+      resolve({ id: this.lastID, changes: this.changes });
+    });
+  });
+}
+
 function get(sql, params = []) {
   if (tursoClient) {
     return remoteExecutor().execute({ sql, args: params }).then(result =>
@@ -100,6 +115,7 @@ function all(sql, params = []) {
     db.all(sql, params, (error, rows) => error ? reject(error) : resolve(rows));
   });
 }
+
 let transactionQueue = Promise.resolve();
 function transaction(work) {
   if (tursoClient) {
