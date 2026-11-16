@@ -227,7 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let newUserMessages = 0;
     result.tickets.forEach(ticket => {
       const previousId = knownLastMessageIds.get(ticket.id);
-      const newTicket = previousId === undefined && ticket.estado === 'abierto';
+      const newTicket = previousId === undefined &&
+        (ticket.estado === 'abierto' ||
+          (ticket.estado !== 'resuelto' && ticket.ultimo_tipo_autor === 'usuario'));
       const userReplied = previousId !== undefined &&
         ticket.ultimo_tipo_autor === 'usuario' &&
         Number(ticket.ultimo_mensaje_id) > previousId;
@@ -241,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ));
     if (!ticketList.contains(document.activeElement)) renderTickets(result.tickets);
     if (newUserMessages) {
-      setStatus(`${newUserMessages} consulta(s) nueva(s) o con respuesta del usuario.`);
+      setStatus(`${newUserMessages} consulta(s) pendiente(s) o con respuesta nueva.`);
       document.title = `(${newUserMessages}) Soporte | AgroConecta`;
       userActivity.forEach(ticket => showTicketNotification(ticket));
     } else if (!silent) {
@@ -302,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     submit.disabled = true;
     setStatus('Verificando clave...');
     try {
-      await loadTickets();
+      await loadTickets({ notify: true });
       keyInput.value = '';
       loginForm.hidden = true;
       toolbar.hidden = false;
