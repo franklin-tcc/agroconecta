@@ -944,12 +944,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const loggedIn = Boolean(sessionUser);
     const registerItem = document.getElementById('registerNavItem');
     const dashboardItem = document.getElementById('dashboardNavItem');
+    const transportItem = document.getElementById('transportNavItem');
     const messagesItem = document.getElementById('messagesNavItem');
     const contactTab = document.getElementById('tab-contacto');
     const roleEntry = document.querySelector('.nav-role-entry');
     const sellerButton = document.querySelector('.btn-seller');
     if (registerItem) registerItem.hidden = loggedIn;
     if (dashboardItem) dashboardItem.hidden = !loggedIn;
+    if (transportItem) transportItem.hidden = !loggedIn;
     if (messagesItem) messagesItem.hidden = !loggedIn;
     if (contactTab) contactTab.hidden = loggedIn;
     if (roleEntry) roleEntry.hidden = loggedIn;
@@ -1032,6 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
       dashboardDataPollTimer = null;
       availableChatItems = [];
       if (document.getElementById('tab-dashboard').classList.contains('active') ||
+          document.getElementById('tab-transport').classList.contains('active') ||
           document.getElementById('tab-messages').classList.contains('active')) {
         cambiarPestana('tab-inicio');
       }
