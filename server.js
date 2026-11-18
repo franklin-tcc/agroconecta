@@ -873,30 +873,19 @@ async function createTransportConversations(orderId, buyerId, farmerId, driverId
 }
 
 async function createTicket({
-  userId = null, name = '', email = '', subject = 'Consulta de soporte', message, transcript = []
+  userId = null, name = '', email = '', subject = 'Consulta de soporte', message
 }) {
   const accessToken = crypto.randomBytes(32).toString('base64url');
   const ticket = await transaction(async () => {
-    const savedTranscript = transcript.length
-      ? transcript
-      : [{ role: 'user', content: cleanText(message, 1800) }];
-    const initialMessage = savedTranscript.find(item => item.role === 'user')?.content ||
-      cleanText(message, 1800);
+    const initialMessage = cleanText(message, 1800);
     const result = await run(
       `INSERT INTO SupportTickets(usuario_id, email, asunto, mensaje, access_token_hash)
         VALUES (?, ?, ?, ?, ?)`,
       [userId, normalizeEmail(email) || null, cleanText(subject, 160),
         initialMessage, tokenHash(accessToken)]
     );
-    for (const item of savedTranscript) {
-      await run(`INSERT INTO SupportMessages(ticket_id, usuario_id, remitente, tipo_autor, contenido)
-        VALUES (?, ?, 'usuario', ?, ?)`, [
-        result.id,
-        item.role === 'user' ? userId : null,
-        item.role === 'assistant' ? 'assistant' : 'usuario',
-        cleanText(item.content, 1800)
-      ]);
-    }
+    await run(`INSERT INTO SupportMessages(ticket_id, usuario_id, remitente, contenido)
+      VALUES (?, ?, 'usuario', ?)`, [result.id, userId, initialMessage]);
     return { id: result.id, accessToken };
   });
   notifyAdminOfSupportTicket({
@@ -1597,7 +1586,6 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   res.status(201).json({ message });
 });
 
-const SUPPORT_HISTORY_LIMIT = 500;
 const supportKnowledge = [
   {
     pattern: /\b(registr|crear (?:una )?cuenta|dni|ruc|correo unico|perfil|rol)/i,
@@ -1633,7 +1621,7 @@ const supportKnowledge = [
   },
   {
     pattern: /\b(estaf|engan|fraude|sospech|report|denunci|suplant|seguridad)/i,
-    answer: 'Lamento que estés pasando por eso. No envíes más dinero ni códigos. Conserva el número del pedido, los mensajes, comprobantes y capturas; no borres el chat. Desde Soporte explica qué ocurrió, quién participó y cuándo. Si necesitas que una persona revise el caso, pulsa “No, necesito ayuda” o pide hablar con un administrador y el historial se transferirá en este mismo chat.'
+    answer: 'Lamento que estés pasando por eso. No envíes más dinero ni códigos. Conserva el número del pedido, los mensajes, comprobantes y capturas; no borres el chat. Para pedir una revisión humana, envía los detalles desde la sección Soporte; esa consulta se tramita por separado y este chat automatizado no se comparte.'
   },
   {
     pattern: /\b(danad|mal estado|demora|retras|cancel|anular|devol|reembols|reclamo|no lleg|entrega)/i,
@@ -1645,7 +1633,7 @@ const supportKnowledge = [
   },
   {
     pattern: /\b(soporte|administr|ayud|problema|error|no puedo|no aparece|no carga|fall)/i,
-    answer: 'Con gusto te ayudo. Dime qué intentabas hacer, en qué sección estabas y qué mensaje apareció; no envíes contraseñas ni códigos. Si la guía no resuelve el problema, elige “No, necesito ayuda” para transferir el historial completo a un administrador, que podrá responderte en este mismo chat.'
+    answer: 'Con gusto te oriento. Dime qué intentabas hacer, en qué sección estabas y qué mensaje apareció; no envíes contraseñas ni códigos. Este asistente solo ofrece orientación. Para que una persona revise tu caso, envía una consulta independiente desde la sección Soporte; la conversación de este asistente no se adjuntará.'
   },
   {
     pattern: /\b(hola|buenos dias|buenas tardes|buenas noches)\b/i,
@@ -1664,23 +1652,6 @@ function normalizeSupportText(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-function normalizeSupportTranscript(raw) {
-  if (raw === undefined || raw === null) return [];
-  if (!Array.isArray(raw) || raw.length > SUPPORT_HISTORY_LIMIT) return null;
-  const transcript = raw.map(item => ({
-    role: item?.role === 'assistant' || item?.role === 'user' ? item.role : '',
-    content: cleanText(item?.content, 1800)
-  }));
-  return transcript.some(item => !item.role || !item.content) ? null : transcript;
-}
-
-function appendSupportMessageIfMissing(transcript, role, content) {
-  const last = transcript[transcript.length - 1];
-  if (last?.role === role && last.content === content) return transcript;
-  if (transcript.length >= SUPPORT_HISTORY_LIMIT) return null;
-  return [...transcript, { role, content }];
-}
-
 function getSupportAssistantAnswer(message) {
   const normalizedMessage = normalizeSupportText(message);
   return supportKnowledge.find(entry => entry.pattern.test(normalizedMessage))?.answer || null;
@@ -1689,67 +1660,23 @@ function getSupportAssistantAnswer(message) {
 app.post('/api/support/assistant', rateLimit(30, 60 * 1000), async (req, res) => {
   const message = cleanText(req.body?.mensaje, 1800);
   if (!message) return res.status(400).json({ error: 'Escribe una consulta.' });
-  const rawHistory = req.body?.historial ?? req.body?.transcript;
-  const history = normalizeSupportTranscript(rawHistory);
-  if (!history) return res.status(400).json({ error: 'El historial de la conversación no es válido.' });
 
   const normalizedMessage = normalizeSupportText(message);
   const asksForPerson = supportHumanRequestPatterns.some(pattern => pattern.test(normalizedMessage));
   if (asksForPerson) {
-    const transcript = appendSupportMessageIfMissing(history, 'user', message);
-    if (!transcript) return res.status(400).json({ error: 'La conversación es demasiado extensa para transferirla completa.' });
-    const user = await currentUser(req);
-    const ticket = await createTicket({
-      userId: user?.id || null,
-      name: user?.nombre || '',
-      email: user?.email || req.body?.email || '',
-      subject: cleanText(req.body?.asunto, 160) || 'Ayuda solicitada desde el asistente',
-      message,
-      transcript
-    });
-    setSupportTicketCookie(res, ticket.id, ticket.accessToken);
-    const response = `Te transferí con un administrador en la consulta #${ticket.id}. Puedes continuar en este mismo chat.`;
-    return res.status(201).json({
-      respuesta: response,
-      message: response,
+    return res.json({
+      respuesta: 'Este asistente solo brinda orientación automática. Para contactar al equipo humano, abre la sección Soporte y envía el formulario; se creará una consulta independiente y este chat no se compartirá.',
       resuelto: false,
-      derivado: true,
-      ticketId: ticket.id
+      derivado: false
     });
   }
 
   const answer = getSupportAssistantAnswer(message);
   if (answer) return res.json({ respuesta: answer, resuelto: true, derivado: false });
   res.json({
-    respuesta: 'No tengo una respuesta confiable para esa pregunta. Dime qué intentabas hacer, en qué sección estabas y qué pasó; si necesitas ayuda humana, puedes pedir un administrador y enviaré esta conversación completa.',
+    respuesta: 'No tengo una respuesta confiable para esa pregunta. Dime qué intentabas hacer, en qué sección estabas y qué pasó. Si necesitas ayuda humana, envía una consulta desde la sección Soporte; este chat automatizado no se adjuntará.',
     resuelto: false,
     derivado: false
-  });
-});
-
-app.post('/api/support/escalate', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
-  const rawTranscript = req.body?.historial ?? req.body?.transcript;
-  const transcript = normalizeSupportTranscript(rawTranscript);
-  if (!transcript || transcript.length < 1) {
-    return res.status(400).json({ error: 'No se encontró el historial de esta conversación. Vuelve a intentarlo.' });
-  }
-  if (!transcript.some(item => item.role === 'user')) {
-    return res.status(400).json({ error: 'El historial de la conversación no es válido.' });
-  }
-  const user = await currentUser(req);
-  const lastUserMessage = [...transcript].reverse().find(item => item.role === 'user');
-  const ticket = await createTicket({
-    userId: user?.id || null,
-    name: user?.nombre || '',
-    email: user?.email || req.body?.email || '',
-    subject: cleanText(req.body?.asunto, 160) || 'Ayuda solicitada desde el asistente',
-    message: lastUserMessage.content,
-    transcript
-  });
-  setSupportTicketCookie(res, ticket.id, ticket.accessToken);
-  res.status(201).json({
-    message: `La conversación completa quedó en la bandeja de soporte con el número #${ticket.id}. El administrador puede responderte aquí.`,
-    ticketId: ticket.id
   });
 });
 
@@ -1757,19 +1684,13 @@ app.post('/api/support/tickets', rateLimit(10, 15 * 60 * 1000), async (req, res)
   const message = cleanText(req.body?.mensaje, 1800);
   const subject = cleanText(req.body?.asunto, 160);
   if (!message || !subject) return res.status(400).json({ error: 'Escribe el asunto y el detalle de tu consulta.' });
-  const rawHistory = req.body?.historial ?? req.body?.transcript;
-  const history = normalizeSupportTranscript(rawHistory);
-  if (!history) return res.status(400).json({ error: 'El historial de la conversación no es válido.' });
-  const transcript = appendSupportMessageIfMissing(history, 'user', message);
-  if (!transcript) return res.status(400).json({ error: 'La conversación es demasiado extensa para transferirla completa.' });
   const user = await currentUser(req);
   const ticket = await createTicket({
     userId: user?.id || null,
     name: user?.nombre || '',
     email: user?.email || req.body?.email || '',
     subject,
-    message,
-    transcript
+    message
   });
   setSupportTicketCookie(res, ticket.id, ticket.accessToken);
   res.status(201).json({

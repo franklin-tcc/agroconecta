@@ -34,6 +34,8 @@ La recuperación por correo necesita que configures `SMTP_HOST`, `SMTP_PORT`, `S
 
 La recuperación por WhatsApp es opcional y requiere una aplicación de Meta WhatsApp Cloud API, un número de WhatsApp Business habilitado y una plantilla aprobada que acepte el código como parámetro. Configura `WHATSAPP_PHONE_NUMBER_ID` (identificador del número emisor de Business), `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_API_VERSION`, `WHATSAPP_TEMPLATE_NAME` y `WHATSAPP_TEMPLATE_LANGUAGE`. El número celular que el usuario registró es el destinatario; el número público de contacto de AgroConecta o una línea Bitel por sí solos no pueden enviar códigos automáticamente. Sin las credenciales de Business, la aplicación avisa que el canal no está disponible.
 
+El Asistente de ayuda es una guía automatizada independiente: no crea tickets ni comparte su historial. La atención humana se solicita desde la pestaña `Soporte`; el formulario crea un ticket y la conversación con el administrador continúa allí.
+
 La bandeja de soporte es `admin.html`; su API requiere el valor secreto de `ADMIN_API_KEY` y debe abrirse bajo el mismo dominio público que usa el comprador para que consulte la misma base Turso. Mientras permanece abierta, revisa tickets y mensajes cada tres segundos; activa el permiso del navegador para recibir notificaciones nativas y sonido. Al crear un ticket, el servidor intenta enviar un correo de alerta sin demorar la respuesta al usuario. Configura opcionalmente `ADMIN_NOTIFY_EMAIL`; si está vacío, el destino es `SMTP_USER`. El correo requiere `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` y `SMTP_FROM`.
 
 ## 4. Comprobar el despliegue

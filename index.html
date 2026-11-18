@@ -734,17 +734,15 @@
     <section id="tab-support" class="tab-content">
       <div class="container support-center-page">
         <div class="support-center-intro">
-          <span class="sub-heading">Estamos para orientarte</span>
+          <span class="sub-heading">Atención del equipo</span>
           <h2>Soporte AgroConecta</h2>
-          <p>Consulta cómo usar AgroConecta. Si la guía no resuelve tu caso, el asistente enviará el historial completo al administrador para que te responda en el mismo chat.</p>
+          <p>Envía una consulta directamente al equipo de soporte y continúa la conversación aquí. Este canal es independiente del Asistente de ayuda.</p>
         </div>
         <div class="support-center-grid">
           <article class="info-card">
-            <h3>¿En qué podemos orientarte?</h3>
-            <p>Pregunta sobre cuentas, pedidos, publicaciones, pagos o transporte. El asistente te dará pasos concretos antes de ofrecerte hablar con una persona.</p>
-            <button class="btn btn-primary" id="supportCenterOpenAssistant" type="button">Iniciar conversación</button>
-            <details class="support-manual-contact">
-              <summary>Enviar una consulta sin usar el asistente</summary>
+            <div id="supportTicketComposer">
+              <h3>Contactar con soporte</h3>
+              <p>Describe tu consulta para que una persona del equipo pueda revisarla.</p>
               <form id="supportTicketForm">
                 <div class="form-group">
                   <label for="supportSubject">Asunto</label>
@@ -760,17 +758,32 @@
                 </div>
                 <button class="btn btn-primary" type="submit">Enviar a soporte</button>
               </form>
-            </details>
+            </div>
+            <section id="supportTicketConversation" class="support-ticket-conversation" aria-label="Chat con soporte" hidden>
+              <div class="support-ticket-heading">
+                <div>
+                  <h3>Conversación con soporte</h3>
+                  <p id="supportTicketNumber"></p>
+                </div>
+                <button class="btn btn-secondary" id="supportNewRequest" type="button">Nueva consulta</button>
+              </div>
+              <div class="support-ticket-messages" id="supportTicketMessages" aria-live="polite"></div>
+              <form class="support-ticket-reply-form" id="supportTicketChatForm">
+                <label class="sr-only" for="supportTicketChatInput">Escribe a soporte</label>
+                <input id="supportTicketChatInput" type="text" maxlength="1800" placeholder="Escribe un mensaje..." autocomplete="off" required />
+                <button class="btn btn-primary" type="submit">Enviar</button>
+              </form>
+            </section>
             <p class="support-ticket-status" id="supportTicketStatus" role="status" aria-live="polite"></p>
           </article>
           <article class="faq-card">
-            <h3>Cómo se gestiona tu consulta</h3>
+            <h3>Atención humana, por separado</h3>
             <ol class="support-steps">
-              <li>Elige un tema o describe qué intentabas hacer; el asistente te responderá con instrucciones de AgroConecta.</li>
-              <li>Después podrás indicar si se resolvió. Si no, el historial completo se enviará al administrador.</li>
-              <li>El administrador responderá en ese mismo chat, que se actualiza automáticamente mientras esté abierto.</li>
+              <li>Envía aquí tu consulta; se registrará un ticket independiente.</li>
+              <li>El equipo de soporte podrá leer y responder en esta conversación.</li>
+              <li>Los mensajes se actualizan automáticamente mientras la página está abierta.</li>
             </ol>
-            <p class="form-help">El asistente usa respuestas temáticas de AgroConecta; no es una IA generativa. No envíes documentos personales, claves ni códigos de seguridad.</p>
+            <p class="form-help">El Asistente de ayuda es una guía separada: no crea tickets ni comparte su conversación con soporte. No envíes contraseñas ni códigos de seguridad.</p>
           </article>
         </div>
       </div>
@@ -846,14 +859,13 @@
     <section class="support-chat-panel" id="supportChatPanel" aria-label="Asistente de ayuda" hidden>
       <div class="chat-heading">
         <div>
-          <strong id="supportChatTitle">Asistente AgroConecta</strong>
-          <small id="supportChatSubtitle">Guía de compras, cosechas y transporte</small>
+          <strong>Asistente AgroConecta</strong>
+          <small>Guía de compras, cosechas y transporte</small>
         </div>
-        <button type="button" class="support-chat-mode-toggle" id="supportChatModeToggle" hidden>Continuar con soporte</button>
         <button type="button" id="supportChatClose" aria-label="Cerrar asistente">×</button>
       </div>
       <div class="chat-messages" id="supportChatMessages" aria-live="polite">
-        <div class="chat-message assistant"><strong class="chat-message-author">Asistente AgroConecta</strong><span>¡Hola! Puedo guiarte para registrarte, comprar, publicar una cosecha, coordinar transporte o recuperar tu cuenta. Escribe tu pregunta o elige un tema. Si mi guía no te sirve, podrás continuar aquí con el administrador.</span></div>
+        <div class="chat-message assistant"><strong class="chat-message-author">Asistente AgroConecta</strong><span>¡Hola! Puedo guiarte para registrarte, comprar, publicar una cosecha, coordinar transporte o recuperar tu cuenta. Escribe tu pregunta o elige un tema.</span></div>
       </div>
       <div class="support-topic-options" id="supportTopicOptions" aria-label="Temas de ayuda">
         <button type="button" data-support-topic="¿Cómo creo una cuenta y qué perfiles hay?" data-support-label="Cuenta y acceso">Cuenta y acceso</button>

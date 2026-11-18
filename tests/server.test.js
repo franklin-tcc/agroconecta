@@ -356,30 +356,47 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     assert.equal(assistantAnswer.status, 200);
     assert.equal(assistantAnswer.body.resuelto, false);
     assert.equal(assistantAnswer.body.ticketId, undefined);
-    const escalated = await request('/api/support/escalate', {
+    const directHumanRequest = await request('/api/support/assistant', {
       method: 'POST',
       cookie: buyerCookie,
       body: {
-        asunto: 'Ayuda con pedidos',
-        transcript: [
-          { role: 'user', content: '¿Cuál es la capital de Marte?' },
-          { role: 'assistant', content: assistantAnswer.body.respuesta },
-          { role: 'user', content: 'No, necesito ayuda de una persona.' },
-          { role: 'assistant', content: 'Estoy pasando esta conversación al administrador.' }
+        mensaje: 'Necesito hablar con una persona.',
+        historial: [
+          { role: 'user', content: 'No puedo editar una cosecha.' },
+          { role: 'assistant', content: 'Abre Mis cosechas y elige Editar.' }
         ]
       }
     });
-    assert.equal(escalated.status, 201);
-    const supportTicketId = escalated.body.ticketId;
+    assert.equal(directHumanRequest.status, 200);
+    assert.equal(directHumanRequest.body.resuelto, false);
+    assert.equal(directHumanRequest.body.ticketId, undefined);
+    assert.match(directHumanRequest.body.respuesta, /no se compartirá/);
+    const queueBeforeManualRequest = await fetch(`${baseUrl}/api/admin/tickets`, {
+      headers: { Authorization: 'Bearer test-admin-key' }
+    });
+    assert.equal((await queueBeforeManualRequest.json()).tickets.length, 0);
+
+    const supportTicket = await request('/api/support/tickets', {
+      method: 'POST',
+      cookie: buyerCookie,
+      body: {
+        asunto: 'Ayuda con publicaciones',
+        mensaje: 'No puedo guardar una cosecha.',
+        historial: [
+          { role: 'user', content: '¿Cómo edito una cosecha?' },
+          { role: 'assistant', content: 'Abre Mis cosechas y elige Editar.' }
+        ]
+      }
+    });
+    assert.equal(supportTicket.status, 201);
+    const supportTicketId = supportTicket.body.ticketId;
     const buyerSupportMessages = await request(
       `/api/support/tickets/${supportTicketId}/messages`, { cookie: buyerCookie }
     );
     assert.equal(buyerSupportMessages.status, 200);
-    assert.equal(buyerSupportMessages.body.messages[0].contenido,
-      '¿Cuál es la capital de Marte?');
-    assert.equal(buyerSupportMessages.body.messages[1].remitente, 'assistant');
-    assert.equal(buyerSupportMessages.body.messages[1].autor, 'Asistente AgroConecta');
-    assert.equal(buyerSupportMessages.body.messages.length, 4);
+    assert.equal(buyerSupportMessages.body.messages.length, 1);
+    assert.equal(buyerSupportMessages.body.messages[0].contenido, 'No puedo guardar una cosecha.');
+    assert.equal(buyerSupportMessages.body.messages[0].remitente, 'usuario');
     const foreignSupportMessages = await request(
       `/api/support/tickets/${supportTicketId}/messages`, { cookie: farmerCookie }
     );
@@ -392,8 +409,8 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     assert.equal(authorizedQueue.status, 200);
     const queuedTickets = (await authorizedQueue.json()).tickets;
     assert.equal(queuedTickets.length, 1);
-    assert.equal(queuedTickets[0].ultimo_tipo_autor, 'assistant');
-    assert.equal(queuedTickets[0].ultimo_remitente, 'assistant');
+    assert.equal(queuedTickets[0].ultimo_tipo_autor, 'usuario');
+    assert.equal(queuedTickets[0].ultimo_remitente, 'usuario');
     assert.equal(queuedTickets[0].estado, 'abierto');
     const anonymousTicket = await request('/api/support/tickets', {
       method: 'POST',
@@ -415,10 +432,9 @@ test('accounts, purchases, transport offers, chats and support use the existing 
       { cookie: anonymousTicket.cookie }
     );
     assert.equal(anonymousThread.status, 200);
-    assert.equal(anonymousThread.body.messages.length, 3);
-    assert.equal(anonymousThread.body.messages[0].contenido, '¿Cómo edito una cosecha?');
-    assert.equal(anonymousThread.body.messages[1].remitente, 'assistant');
-    assert.equal(anonymousThread.body.messages[2].contenido, 'Sigo sin poder guardar.');
+    assert.equal(anonymousThread.body.messages.length, 1);
+    assert.equal(anonymousThread.body.messages[0].contenido, 'Sigo sin poder guardar.');
+    assert.equal(anonymousThread.body.messages[0].remitente, 'usuario');
     const deniedAnonymousThread = await request(
       `/api/support/tickets/${anonymousTicket.body.ticketId}/messages`
     );
@@ -440,7 +456,7 @@ test('accounts, purchases, transport offers, chats and support use the existing 
     });
     assert.equal(adminReply.status, 201);
     const userSeesAdminReply = await request(
-      `/api/support/tickets/${supportTicketId}/messages?after=4`, { cookie: buyerCookie }
+      `/api/support/tickets/${supportTicketId}/messages?after=1`, { cookie: buyerCookie }
     );
     assert.equal(userSeesAdminReply.body.messages[0].remitente, 'admin');
     assert.equal(userSeesAdminReply.body.messages[0].contenido, 'Ya estamos revisando tu caso.');
@@ -463,31 +479,6 @@ test('accounts, purchases, transport offers, chats and support use the existing 
       body: { estado: 'en_revision' }
     });
     assert.equal(updateTicket.status, 200);
-
-    const directHumanRequest = await request('/api/support/assistant', {
-      method: 'POST',
-      cookie: buyerCookie,
-      body: {
-        asunto: 'Ayuda con publicaciones',
-        mensaje: 'Necesito hablar con una persona.',
-        historial: [
-          { role: 'user', content: 'No puedo editar una cosecha.' },
-          { role: 'assistant', content: 'Abre Mis cosechas y elige Editar.' },
-          { role: 'user', content: 'Necesito hablar con una persona.' }
-        ]
-      }
-    });
-    assert.equal(directHumanRequest.status, 201);
-    assert.equal(directHumanRequest.body.derivado, true);
-    const directHumanThread = await request(
-      `/api/support/tickets/${directHumanRequest.body.ticketId}/messages`,
-      { cookie: `${buyerCookie}; ${directHumanRequest.cookie}` }
-    );
-    assert.equal(directHumanThread.status, 200);
-    assert.equal(directHumanThread.body.messages.length, 3);
-    assert.equal(directHumanThread.body.messages[0].contenido, 'No puedo editar una cosecha.');
-    assert.equal(directHumanThread.body.messages[1].remitente, 'assistant');
-    assert.equal(directHumanThread.body.messages[2].contenido, 'Necesito hablar con una persona.');
 
     const missingEmailConfiguration = await request('/api/auth/forgot-password', {
       method: 'POST', body: { email: 'comprador@example.com' }

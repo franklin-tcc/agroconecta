@@ -2070,20 +2070,6 @@ body {
   min-width: 0;
 }
 
-.chat-heading button.support-chat-mode-toggle {
-  flex: 0 0 auto;
-  padding: 7px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 999px;
-  background: transparent;
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.chat-heading button.support-chat-mode-toggle:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
 .chat-messages {
   display: flex;
   flex: 1;
@@ -2235,18 +2221,6 @@ body {
   font-size: 0.68rem;
   line-height: 1.4;
   text-align: center;
-}
-
-.support-manual-contact {
-  margin-top: 18px;
-  color: var(--primary-color);
-  font-weight: 700;
-}
-
-.support-manual-contact form {
-  margin-top: 16px;
-  color: var(--text-dark);
-  font-weight: 400;
 }
 
 .sr-only {
@@ -3279,6 +3253,58 @@ body {
   margin-top: 13px;
   color: var(--primary-color);
   font-weight: 700;
+}
+
+.support-ticket-conversation[hidden] {
+  display: none;
+}
+
+.support-ticket-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.support-ticket-heading h3,
+.support-ticket-heading p {
+  margin: 0;
+}
+
+.support-ticket-heading p {
+  font-size: 0.86rem;
+}
+
+.support-ticket-heading .btn {
+  flex: 0 0 auto;
+}
+
+.support-ticket-messages {
+  display: flex;
+  min-height: 220px;
+  max-height: min(420px, 55vh);
+  flex-direction: column;
+  gap: 9px;
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: #f6f8f8;
+}
+
+.support-ticket-reply-form {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.support-ticket-reply-form input {
+  min-width: 0;
+  flex: 1;
+  padding: 11px 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
 }
 
 .account-forgot {

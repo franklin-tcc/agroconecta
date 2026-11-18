@@ -30,7 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeTransportRequestId = null;
   let availableChatItems = [];
   let activeSupportTicketId = null;
-  let supportChatMode = 'assistant';
   let messagePollTimer = null;
   let messageListPollTimer = null;
   let transportMessagePollTimer = null;
@@ -156,13 +155,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const supportChatMessages = document.getElementById('supportChatMessages');
   const supportChatForm = document.getElementById('supportChatForm');
   const supportTopicOptions = document.getElementById('supportTopicOptions');
-  const supportChatModeToggle = document.getElementById('supportChatModeToggle');
-  const supportChatToggleLabel = supportChatToggle?.querySelector('span');
-  const supportChatTitle = document.getElementById('supportChatTitle');
-  const supportChatSubtitle = document.getElementById('supportChatSubtitle');
+  const supportTicketComposer = document.getElementById('supportTicketComposer');
+  const supportTicketConversation = document.getElementById('supportTicketConversation');
+  const supportTicketMessages = document.getElementById('supportTicketMessages');
+  const supportTicketChatForm = document.getElementById('supportTicketChatForm');
+  const supportTicketStatus = document.getElementById('supportTicketStatus');
   const supportTranscriptStorageKey = 'agro_support_transcript';
   const supportTranscriptLimit = 500;
-  const supportAssistantWelcome = '¡Hola! Puedo guiarte para registrarte, comprar, publicar una cosecha, coordinar transporte o recuperar tu cuenta. Escribe tu pregunta o elige un tema. Si mi guía no te sirve, podrás continuar aquí con el administrador.';
+  const supportAssistantWelcome = '¡Hola! Puedo guiarte para registrarte, comprar, publicar una cosecha, coordinar transporte o recuperar tu cuenta. Escribe tu pregunta o elige un tema.';
   let supportTranscript = [];
   let supportTopic = 'Consulta desde el asistente';
   try {
@@ -237,61 +237,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (supportTopicOptions) supportTopicOptions.hidden = !show;
   }
 
-  function updateSupportChatModeControls() {
-    const isTicketMode = supportChatMode === 'ticket' && activeSupportTicketId;
-    if (supportChatToggleLabel) {
-      supportChatToggleLabel.textContent = isTicketMode ? 'Chat de soporte' : 'Asistente de ayuda';
-    }
-    if (supportChatTitle) {
-      supportChatTitle.textContent = isTicketMode ? 'Chat con soporte' : 'Asistente AgroConecta';
-    }
-    if (supportChatSubtitle) {
-      supportChatSubtitle.textContent = isTicketMode
-        ? `Conversación #${activeSupportTicketId} con el administrador`
-        : 'Guía de compras, cosechas y transporte';
-    }
-    if (supportChatModeToggle) {
-      supportChatModeToggle.hidden = !activeSupportTicketId;
-      supportChatModeToggle.textContent = isTicketMode ? 'Volver al asistente' : 'Continuar con soporte';
-    }
-    supportChatPanel?.setAttribute('aria-label', isTicketMode ? 'Chat con soporte' : 'Asistente de ayuda');
-  }
-
-  function renderAssistantConversation() {
-    supportChatMessages.replaceChildren();
-    agregarMensajeChat(supportAssistantWelcome, 'assistant');
-    supportTranscript.forEach(item => {
-      agregarMensajeChat(item.content, item.role === 'assistant' ? 'assistant' : 'user');
-    });
-    if (supportTranscript.length) showResolutionPrompt(true);
-    else showSupportTopics(true);
-  }
-
-  function setSupportChatMode(mode) {
-    if (mode === 'ticket' && activeSupportTicketId) {
-      supportChatMode = 'ticket';
-      updateSupportChatModeControls();
-      showSupportTopics(false);
-      loadSupportTicket(activeSupportTicketId, true).catch(error =>
-        console.error('No se pudo abrir la conversación de soporte:', error)
-      );
-      if (!supportMessagePollTimer) {
-        supportMessagePollTimer = window.setInterval(() => {
-          if (activeSupportTicketId && supportChatMode === 'ticket') {
-            loadSupportTicket(activeSupportTicketId).catch(error =>
-              console.error('No se pudo actualizar el chat de soporte:', error)
-            );
-          }
-        }, 4000);
-      }
-      return;
-    }
-
-    supportChatMode = 'assistant';
-    updateSupportChatModeControls();
-    renderAssistantConversation();
-  }
-
   function showResolutionPrompt(answerResolved) {
     removeSupportFeedback();
     showSupportTopics(false);
@@ -301,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const question = document.createElement('p');
     question.textContent = answerResolved
       ? '¿Se resolvió tu duda?'
-      : 'No pude resolverla con seguridad. ¿Quieres contactar con un administrador?';
+      : 'No pude resolverla con seguridad. Puedes enviar una consulta aparte a Soporte.';
     const controls = document.createElement('div');
     controls.className = 'support-resolution-actions';
     const first = document.createElement('button');
@@ -310,8 +255,8 @@ document.addEventListener('DOMContentLoaded', () => {
     first.textContent = answerResolved ? 'Sí, gracias' : 'Seguir preguntando';
     const second = document.createElement('button');
     second.type = 'button';
-    second.dataset.supportDecision = answerResolved ? 'unresolved' : 'escalate';
-    second.textContent = answerResolved ? 'No, necesito ayuda' : 'Contactar administrador';
+    second.dataset.supportDecision = answerResolved ? 'continue' : 'dismiss';
+    second.textContent = answerResolved ? 'Seguir preguntando' : 'Cerrar';
     controls.append(first, second);
     feedback.append(question, controls);
     supportChatMessages?.appendChild(feedback);
@@ -320,34 +265,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
   supportChatToggle?.addEventListener('click', () => setChatOpen(supportChatPanel.hidden));
   document.getElementById('supportChatClose')?.addEventListener('click', () => setChatOpen(false));
+  function agregarMensajeSoporte(message, sender, messageId = null) {
+    if (!supportTicketMessages) return;
+    const bubble = document.createElement('div');
+    bubble.className = `chat-message ${sender}`;
+    const author = document.createElement('strong');
+    author.className = 'chat-message-author';
+    author.textContent = sender === 'admin'
+      ? 'Soporte AgroConecta'
+      : sender === 'assistant'
+        ? 'Asistente AgroConecta'
+        : sessionUser?.nombre || 'Tú';
+    const content = document.createElement('span');
+    content.textContent = message;
+    bubble.append(author, content);
+    if (messageId !== null) bubble.dataset.supportMessageId = String(messageId);
+    supportTicketMessages.appendChild(bubble);
+    supportTicketMessages.scrollTop = supportTicketMessages.scrollHeight;
+  }
+
   async function loadSupportTicket(ticketId, replace = false) {
     const lastId = replace ? 0 :
-      Number(supportChatMessages.querySelector('[data-support-message-id]:last-child')?.dataset.supportMessageId) || 0;
+      Number(supportTicketMessages.querySelector('[data-support-message-id]:last-child')?.dataset.supportMessageId) || 0;
     const { messages } = await apiRequest(
       `/api/support/tickets/${ticketId}/messages?after=${lastId}`
     );
-    if (supportChatMode !== 'ticket' || Number(ticketId) !== activeSupportTicketId) return;
+    if (Number(ticketId) !== activeSupportTicketId) return;
     if (replace) {
-      supportChatMessages.replaceChildren();
-      showSupportTopics(false);
+      supportTicketMessages.replaceChildren();
     }
     messages.forEach(message => {
-      const sender = message.remitente === 'admin' || message.remitente === 'assistant'
-        ? message.remitente : 'user';
-      agregarMensajeChat(message.contenido, sender, null, message.id);
+      const sender = ['admin', 'assistant'].includes(message.remitente) ? message.remitente : 'user';
+      agregarMensajeSoporte(message.contenido, sender, message.id);
     });
   }
   function activateSupportTicket(ticketId) {
     activeSupportTicketId = Number(ticketId);
-    supportTranscript = [];
-    try { sessionStorage.removeItem(supportTranscriptStorageKey); }
-    catch (error) { console.error('No se pudo limpiar el historial local del asistente:', error); }
+    supportTicketComposer.hidden = true;
+    supportTicketConversation.hidden = false;
+    document.getElementById('supportTicketNumber').textContent = `Consulta #${activeSupportTicketId}`;
+    supportTicketMessages.replaceChildren();
     try { sessionStorage.setItem('agro_support_ticket_id', String(activeSupportTicketId)); }
     catch (error) { console.error('No se pudo conservar el número de consulta en esta pestaña:', error); }
-    setSupportChatMode('ticket');
+    loadSupportTicket(activeSupportTicketId, true).catch(error => {
+      console.error('No se pudo abrir la conversación de soporte:', error);
+      supportTicketStatus.textContent = error.message;
+    });
+    if (!supportMessagePollTimer) {
+      supportMessagePollTimer = window.setInterval(() => {
+        if (activeSupportTicketId) {
+          loadSupportTicket(activeSupportTicketId).catch(error => {
+            console.error('No se pudo actualizar el chat de soporte:', error);
+            supportTicketStatus.textContent = error.message;
+          });
+        }
+      }, 4000);
+    }
   }
   async function sendSupportQuestion(message) {
-    if (!message || supportChatMode !== 'assistant') return;
+    if (!message) return;
     removeSupportFeedback();
     showSupportTopics(false);
     addSupportTranscriptMessage('user', message);
@@ -356,49 +332,18 @@ document.addEventListener('DOMContentLoaded', () => {
         method: 'POST',
         body: JSON.stringify({
           asunto: supportTopic,
-          mensaje: message,
-          historial: supportTranscript
+          mensaje: message
         })
       });
-      if (response.derivado && response.ticketId) {
-        activateSupportTicket(response.ticketId);
-        setChatOpen(true);
-        showToast(response.message || response.respuesta);
-        return;
-      }
       addSupportTranscriptMessage('assistant', response.respuesta);
       showResolutionPrompt(response.resuelto !== false);
     } catch (error) {
       console.error('No se pudo consultar el asistente:', error);
       addSupportTranscriptMessage(
         'assistant',
-        'No pude consultar el asistente en este momento. Puedes volver a intentarlo o abrir el formulario de soporte.'
+        'No pude consultar el asistente en este momento. Vuelve a intentarlo más tarde.'
       );
       showSupportTopics(true);
-    }
-  }
-
-  async function escalateSupportConversation() {
-    addSupportTranscriptMessage('user', 'No, necesito ayuda de una persona.');
-    removeSupportFeedback();
-    try {
-      const result = await apiRequest('/api/support/escalate', {
-        method: 'POST',
-        body: JSON.stringify({
-          asunto: supportTopic,
-          historial: supportTranscript
-        })
-      });
-      activateSupportTicket(result.ticketId);
-      setChatOpen(true);
-      showToast(result.message);
-    } catch (error) {
-      console.error('No se pudo transferir la conversación a soporte:', error);
-      addSupportTranscriptMessage(
-        'assistant',
-        `${error.message} Tu conversación sigue guardada en esta pestaña; vuelve a elegir “No, necesito ayuda” para reintentar.`
-      );
-      showResolutionPrompt(false);
     }
   }
 
@@ -406,25 +351,19 @@ document.addEventListener('DOMContentLoaded', () => {
   try { savedSupportTicketId = Number(sessionStorage.getItem('agro_support_ticket_id')); }
   catch (error) { console.error('No se pudo restaurar la consulta de soporte:', error); }
   if (Number.isInteger(savedSupportTicketId) && savedSupportTicketId > 0) {
-    activeSupportTicketId = savedSupportTicketId;
-    updateSupportChatModeControls();
-    if (supportTranscript.length) renderAssistantConversation();
+    activateSupportTicket(savedSupportTicketId);
   } else if (supportTranscript.length) {
-    renderAssistantConversation();
+    supportChatMessages.replaceChildren();
+    supportTranscript.forEach(item => agregarMensajeChat(
+      item.content, item.role === 'assistant' ? 'assistant' : 'user'
+    ));
+    showResolutionPrompt(true);
   }
-  supportChatModeToggle?.addEventListener('click', () => {
-    setSupportChatMode(supportChatMode === 'ticket' ? 'assistant' : 'ticket');
-  });
   supportTopicOptions?.addEventListener('click', event => {
     const button = event.target.closest('[data-support-topic]');
     if (!button) return;
     supportTopic = button.dataset.supportLabel || 'Consulta desde el asistente';
     sendSupportQuestion(button.dataset.supportTopic);
-  });
-  document.getElementById('supportCenterOpenAssistant')?.addEventListener('click', () => {
-    setSupportChatMode('assistant');
-    setChatOpen(true);
-    cambiarPestana('tab-support');
   });
   supportChatMessages?.addEventListener('click', event => {
     const button = event.target.closest('[data-support-decision]');
@@ -440,8 +379,8 @@ document.addEventListener('DOMContentLoaded', () => {
       addSupportTranscriptMessage('user', 'Quiero seguir preguntando.');
       addSupportTranscriptMessage('assistant', 'Claro. Cuéntame un poco más o selecciona uno de los temas sugeridos.');
       showSupportTopics(true);
-    } else if (decision === 'unresolved' || decision === 'escalate') {
-      escalateSupportConversation();
+    } else if (decision === 'dismiss') {
+      showSupportTopics(true);
     }
   });
   supportChatForm?.addEventListener('submit', async event => {
@@ -451,14 +390,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!message) return;
     input.value = '';
     try {
-      if (activeSupportTicketId && supportChatMode === 'ticket') {
-        const { message: sent } = await apiRequest(`/api/support/tickets/${activeSupportTicketId}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ mensaje: message })
-        });
-        agregarMensajeChat(sent.contenido, 'user', null, sent.id);
-        return;
-      }
       await sendSupportQuestion(message);
     } catch (error) {
       console.error('No se pudo enviar el mensaje de soporte:', error);
@@ -1670,12 +1601,14 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await apiRequest('/api/auth/session', { method: 'DELETE' });
       activeSupportTicketId = null;
-      supportChatMode = 'assistant';
-      updateSupportChatModeControls();
       if (supportMessagePollTimer) window.clearInterval(supportMessagePollTimer);
       supportMessagePollTimer = null;
       try { sessionStorage.removeItem('agro_support_ticket_id'); }
       catch (error) { console.error('No se pudo limpiar la referencia local a soporte:', error); }
+      supportTicketConversation.hidden = true;
+      supportTicketComposer.hidden = false;
+      supportTicketMessages.replaceChildren();
+      supportTicketStatus.textContent = '';
       setSessionUser(null);
       cerrarModal(profileModal);
       showToast('Has cerrado sesión.');
@@ -1884,34 +1817,60 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('supportTicketForm')?.addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
-    const status = document.getElementById('supportTicketStatus');
+    const status = supportTicketStatus;
     const submit = form.querySelector('button[type="submit"]');
     submit.disabled = true;
     status.textContent = 'Enviando consulta a soporte...';
     try {
       const message = document.getElementById('supportMessage').value.trim();
-      const result = activeSupportTicketId
-        ? await apiRequest(`/api/support/tickets/${activeSupportTicketId}/messages`, {
-          method: 'POST', body: JSON.stringify({ mensaje: message })
+      const result = await apiRequest('/api/support/tickets', {
+        method: 'POST',
+        body: JSON.stringify({
+          asunto: document.getElementById('supportSubject').value.trim(),
+          email: document.getElementById('supportEmail').value.trim(),
+          mensaje: message
         })
-        : await apiRequest('/api/support/tickets', {
-          method: 'POST',
-          body: JSON.stringify({
-            asunto: document.getElementById('supportSubject').value.trim(),
-            email: document.getElementById('supportEmail').value.trim(),
-            mensaje: message,
-            historial: supportTranscript
-          })
-        });
+      });
       form.reset();
-      if (result.ticketId) activateSupportTicket(result.ticketId);
-      status.textContent = result.message || 'Tu mensaje se añadió a la conversación de soporte.';
-      setChatOpen(true);
+      activateSupportTicket(result.ticketId);
+      status.textContent = result.message || 'Tu consulta se envió al equipo de soporte.';
     } catch (error) {
       status.textContent = error.message;
     } finally {
       submit.disabled = false;
     }
+  });
+  document.getElementById('supportTicketChatForm')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const input = document.getElementById('supportTicketChatInput');
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    const message = input.value.trim();
+    if (!activeSupportTicketId || !message) return;
+    submit.disabled = true;
+    supportTicketStatus.textContent = 'Enviando mensaje...';
+    try {
+      const { message: sent } = await apiRequest(
+        `/api/support/tickets/${activeSupportTicketId}/messages`,
+        { method: 'POST', body: JSON.stringify({ mensaje: message }) }
+      );
+      input.value = '';
+      agregarMensajeSoporte(sent.contenido, 'user', sent.id);
+      supportTicketStatus.textContent = 'Tu mensaje se envió a soporte.';
+    } catch (error) {
+      supportTicketStatus.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  document.getElementById('supportNewRequest')?.addEventListener('click', () => {
+    activeSupportTicketId = null;
+    supportTicketMessages.replaceChildren();
+    supportTicketConversation.hidden = true;
+    supportTicketComposer.hidden = false;
+    supportTicketStatus.textContent = '';
+    try { sessionStorage.removeItem('agro_support_ticket_id'); }
+    catch (error) { console.error('No se pudo limpiar la consulta de soporte guardada:', error); }
+    document.getElementById('supportSubject').focus();
   });
 
   seleccionarRol('Comprador');
