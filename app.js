@@ -113,6 +113,96 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 5000);
       }
     }
+    if (tabId === 'tab-transport' && sessionUser) {
+      loadTransportCenter().catch(error => showToast(error.message));
+    }
+  }
+
+  const heroCarousel = document.getElementById('heroCarousel');
+  const heroSlides = Array.from(heroCarousel?.querySelectorAll('.hero-slide') || []);
+  const heroDots = Array.from(document.querySelectorAll('#heroPagination button'));
+  const heroReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const heroPauseReasons = new Set(heroReducedMotion ? ['reduced-motion'] : []);
+  let heroIndex = 0;
+  let heroTimer = null;
+
+  function setHeroSlide(index) {
+    if (!heroSlides.length) return;
+    heroIndex = (index + heroSlides.length) % heroSlides.length;
+    heroSlides.forEach((slide, slideIndex) => {
+      const active = slideIndex === heroIndex;
+      slide.classList.toggle('is-active', active);
+      slide.setAttribute('aria-hidden', String(!active));
+      slide.tabIndex = active ? 0 : -1;
+    });
+    heroDots.forEach((dot, dotIndex) => {
+      const active = dotIndex === heroIndex;
+      dot.classList.toggle('is-active', active);
+      if (active) dot.setAttribute('aria-current', 'true');
+      else dot.removeAttribute('aria-current');
+    });
+  }
+
+  function scheduleHeroSlide() {
+    if (heroTimer) window.clearTimeout(heroTimer);
+    if (!heroSlides.length || heroPauseReasons.size) return;
+    heroTimer = window.setTimeout(() => {
+      setHeroSlide(heroIndex + 1);
+      scheduleHeroSlide();
+    }, 3000);
+  }
+
+  function pauseHero(reason) {
+    heroPauseReasons.add(reason);
+    if (heroTimer) window.clearTimeout(heroTimer);
+    heroTimer = null;
+  }
+
+  function resumeHero(reason) {
+    heroPauseReasons.delete(reason);
+    scheduleHeroSlide();
+  }
+
+  if (heroCarousel) {
+    setHeroSlide(0);
+    heroCarousel.addEventListener('mouseenter', () => pauseHero('pointer'));
+    heroCarousel.addEventListener('mouseleave', () => resumeHero('pointer'));
+    heroCarousel.addEventListener('focusin', () => pauseHero('focus'));
+    heroCarousel.addEventListener('focusout', event => {
+      if (!heroCarousel.contains(event.relatedTarget)) resumeHero('focus');
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) pauseHero('hidden');
+      else resumeHero('hidden');
+    });
+    document.getElementById('heroPrev')?.addEventListener('click', () => {
+      setHeroSlide(heroIndex - 1);
+      scheduleHeroSlide();
+    });
+    document.getElementById('heroNext')?.addEventListener('click', () => {
+      setHeroSlide(heroIndex + 1);
+      scheduleHeroSlide();
+    });
+    heroDots.forEach((dot, index) => dot.addEventListener('click', () => {
+      setHeroSlide(index);
+      scheduleHeroSlide();
+    }));
+    heroSlides.forEach(slide => slide.addEventListener('click', event => {
+      event.preventDefault();
+      const query = slide.dataset.promoQuery || '';
+      if (searchInput) searchInput.value = query;
+      filtroBusqueda = query.toLowerCase();
+      document.querySelectorAll('.cat-filter, .region-filter, .tipo-filter').forEach(filter => {
+        filter.checked = true;
+      });
+      const minPrice = document.getElementById('minPrice');
+      const maxPrice = document.getElementById('maxPrice');
+      if (minPrice) minPrice.value = '1.00';
+      if (maxPrice) maxPrice.value = '900.00';
+      aplicarFiltrosYLógica();
+      cambiarPestana('tab-catalogo');
+    }));
+    scheduleHeroSlide();
   }
 
   document.querySelectorAll('.tab-btn, .nav-tab').forEach(button => {
@@ -854,12 +944,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const loggedIn = Boolean(sessionUser);
     const registerItem = document.getElementById('registerNavItem');
     const dashboardItem = document.getElementById('dashboardNavItem');
+    const transportItem = document.getElementById('transportNavItem');
     const messagesItem = document.getElementById('messagesNavItem');
     const contactTab = document.getElementById('tab-contacto');
     const roleEntry = document.querySelector('.nav-role-entry');
     const sellerButton = document.querySelector('.btn-seller');
     if (registerItem) registerItem.hidden = loggedIn;
     if (dashboardItem) dashboardItem.hidden = !loggedIn;
+    if (transportItem) transportItem.hidden = !loggedIn;
     if (messagesItem) messagesItem.hidden = !loggedIn;
     if (contactTab) contactTab.hidden = loggedIn;
     if (roleEntry) roleEntry.hidden = loggedIn;
@@ -942,6 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
       dashboardDataPollTimer = null;
       availableChatItems = [];
       if (document.getElementById('tab-dashboard').classList.contains('active') ||
+          document.getElementById('tab-transport').classList.contains('active') ||
           document.getElementById('tab-messages').classList.contains('active')) {
         cambiarPestana('tab-inicio');
       }
