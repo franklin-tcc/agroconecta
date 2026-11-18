@@ -173,21 +173,55 @@
 
   <main class="main-content">
     <section id="tab-inicio" class="tab-content active">
-      <section class="hero-banner">
-        <div class="hero-overlay"></div>
-        <div class="container hero-inner">
-          <div class="hero-badges">
-            <span class="hero-badge">Mercado directo y justo</span>
-            <span class="hero-badge soft">Cusco • Arequipa • Puno</span>
-          </div>
-          <h1>Compra fresca, directa y con origen claro</h1>
-          <p>
-            Facilitamos el contacto entre productores andinos y compradores urbanos. La disponibilidad, el precio,
-            las condiciones del producto y la entrega se acuerdan directamente antes de cada operación.
-          </p>
-          <div class="hero-cta">
-            <button class="btn btn-primary nav-tab" data-tab="tab-catalogo" type="button">Ver catálogo</button>
-            <button class="btn btn-outline nav-tab" data-tab="tab-contacto" data-role="Comprador" type="button">Registro de comprador</button>
+      <section class="hero-banner" aria-label="Promociones de temporada">
+        <div class="hero-carousel" id="heroCarousel" role="region" aria-roledescription="carrusel" aria-label="Cosechas destacadas">
+          <a class="hero-slide is-active" href="#tab-catalogo" data-promo-query="Maíz Gigante" aria-label="Ver maíz gigante del Cusco">
+            <img src="Imagenes/WhatsApp Image 2026-11-06 at 3.19.59 PM (1).jpeg" alt="" />
+            <div class="hero-overlay"></div>
+            <div class="container hero-inner">
+              <div class="hero-badges"><span class="hero-badge">Cosecha destacada</span><span class="hero-badge soft">Valle Sagrado · Cusco</span></div>
+              <h1>Compra fresca, directa y con origen claro</h1>
+              <p>Maíz gigante andino, ofrecido directamente por productores. Explora la disponibilidad y coordina tu compra.</p>
+              <span class="hero-slide-action">Ver cosechas de maíz <span aria-hidden="true">→</span></span>
+            </div>
+          </a>
+          <a class="hero-slide" href="#tab-catalogo" data-promo-query="Papa nativa" aria-label="Ver papa nativa">
+            <img src="Imagenes/WhatsApp Image 2026-11-06 at 3.19.59 PM (7).jpeg" alt="" />
+            <div class="hero-overlay"></div>
+            <div class="container hero-inner">
+              <div class="hero-badges"><span class="hero-badge">Selección andina</span><span class="hero-badge soft">Origen local</span></div>
+              <h1>Papa nativa, del campo a tu mesa</h1>
+              <p>Encuentra variedades de temporada, revisa quién las produce y conversa antes de confirmar tu pedido.</p>
+              <span class="hero-slide-action">Explorar papas <span aria-hidden="true">→</span></span>
+            </div>
+          </a>
+          <a class="hero-slide" href="#tab-catalogo" data-promo-query="Palta Hass" aria-label="Ver palta Hass">
+            <img src="Imagenes/WhatsApp Image 2026-11-06 at 3.20.00 PM (3).jpeg" alt="" />
+            <div class="hero-overlay"></div>
+            <div class="container hero-inner">
+              <div class="hero-badges"><span class="hero-badge">Fruta de temporada</span><span class="hero-badge soft">Directo del productor</span></div>
+              <h1>Palta fresca para cada mesa</h1>
+              <p>Descubre paltas disponibles para compra local o por jaba y coordina los detalles con quien las cultiva.</p>
+              <span class="hero-slide-action">Ver cosechas de palta <span aria-hidden="true">→</span></span>
+            </div>
+          </a>
+          <a class="hero-slide" href="#tab-catalogo" data-promo-query="Mango Kent" aria-label="Ver mango Kent">
+            <img src="Imagenes/WhatsApp Image 2026-11-06 at 3.20.00 PM (5).jpeg" alt="" />
+            <div class="hero-overlay"></div>
+            <div class="container hero-inner">
+              <div class="hero-badges"><span class="hero-badge">Sabor de temporada</span><span class="hero-badge soft">Chulucanas · Piura</span></div>
+              <h1>Mango de temporada, directo del productor</h1>
+              <p>Revisa la oferta, compara presentaciones y coordina la entrega de manera directa y transparente.</p>
+              <span class="hero-slide-action">Explorar mangos <span aria-hidden="true">→</span></span>
+            </div>
+          </a>
+          <button class="hero-control hero-control-prev" id="heroPrev" type="button" aria-label="Promoción anterior">‹</button>
+          <button class="hero-control hero-control-next" id="heroNext" type="button" aria-label="Siguiente promoción">›</button>
+          <div class="hero-pagination" id="heroPagination" aria-label="Elegir promoción">
+            <button type="button" class="is-active" aria-label="Promoción 1" aria-current="true"></button>
+            <button type="button" aria-label="Promoción 2"></button>
+            <button type="button" aria-label="Promoción 3"></button>
+            <button type="button" aria-label="Promoción 4"></button>
           </div>
         </div>
       </section>
