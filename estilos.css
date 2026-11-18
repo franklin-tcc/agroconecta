@@ -3410,6 +3410,35 @@ body {
   color: #a33b2e;
 }
 
+.admin-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 18px 0;
+  padding: 16px 18px;
+  border: 1px solid #d39219;
+  border-radius: var(--radius-md);
+  background: #fff5dc;
+  box-shadow: 0 4px 16px rgba(106, 73, 8, 0.12);
+  color: #533c0a;
+}
+
+.admin-alert[hidden] {
+  display: none;
+}
+
+.admin-alert p {
+  margin: 5px 0 0;
+  line-height: 1.45;
+}
+
+.admin-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .admin-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -3644,6 +3673,11 @@ body {
 @media (max-width: 580px) {
   .admin-login {
     grid-template-columns: 1fr;
+  }
+
+  .admin-alert {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .admin-chat-dock {

@@ -6,9 +6,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const ticketList = document.getElementById('adminTickets');
   const chatDock = document.getElementById('adminChatDock');
   const notificationButton = document.getElementById('adminEnableNotifications');
+  const alertBanner = document.getElementById('adminAlert');
+  const alertMessage = document.getElementById('adminAlertMessage');
+  const alertOpenButton = document.getElementById('adminAlertOpen');
+  const alertDismissButton = document.getElementById('adminAlertDismiss');
   let adminKey = '';
   let pollTimer = null;
   let knownLastMessageIds = new Map();
+  let alertAudioContext = null;
+  let alertTicketId = null;
   const openChats = new Map();
 
   function setStatus(message, isError = false) {
@@ -115,6 +121,39 @@ document.addEventListener('DOMContentLoaded', () => {
       card.append(title, metadata, message, controls);
       ticketList.appendChild(card);
     });
+  }
+
+  async function enableAlertSound() {
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) return false;
+    try {
+      if (!alertAudioContext) alertAudioContext = new AudioContextConstructor();
+      if (alertAudioContext.state === 'suspended') await alertAudioContext.resume();
+      return alertAudioContext.state === 'running';
+    } catch (error) {
+      console.error('No se pudo activar el sonido de las alertas:', error);
+      return false;
+    }
+  }
+
+  function playAlertSound() {
+    if (!alertAudioContext || alertAudioContext.state !== 'running') return;
+    try {
+      const oscillator = alertAudioContext.createOscillator();
+      const gain = alertAudioContext.createGain();
+      const start = alertAudioContext.currentTime;
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(740, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.055, start + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.24);
+      oscillator.connect(gain);
+      gain.connect(alertAudioContext.destination);
+      oscillator.start(start);
+      oscillator.stop(start + 0.25);
+    } catch (error) {
+      console.error('No se pudo reproducir el sonido de la alerta:', error);
+    }
   }
 
   function renderMessages(messages, container, append) {
@@ -227,11 +266,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let newUserMessages = 0;
     result.tickets.forEach(ticket => {
       const previousId = knownLastMessageIds.get(ticket.id);
+      const latestSender = ticket.ultimo_remitente === 'assistant' ||
+        ticket.ultimo_tipo_autor === 'assistant'
+        ? 'assistant'
+        : ticket.ultimo_remitente || ticket.ultimo_tipo_autor;
       const newTicket = previousId === undefined &&
         (ticket.estado === 'abierto' ||
-          (ticket.estado !== 'resuelto' && ticket.ultimo_tipo_autor === 'usuario'));
+          (ticket.estado !== 'resuelto' && latestSender === 'usuario'));
       const userReplied = previousId !== undefined &&
-        ticket.ultimo_tipo_autor === 'usuario' &&
+        latestSender === 'usuario' &&
         Number(ticket.ultimo_mensaje_id) > previousId;
       if (notify && (newTicket || userReplied)) {
         newUserMessages += 1;
@@ -245,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (newUserMessages) {
       setStatus(`${newUserMessages} consulta(s) pendiente(s) o con respuesta nueva.`);
       document.title = `(${newUserMessages}) Soporte | AgroConecta`;
-      userActivity.forEach(ticket => showTicketNotification(ticket));
+      showSupportAlert(userActivity);
     } else if (!silent) {
       setStatus(`${result.tickets.length} consulta(s) cargada(s).`);
       document.title = 'Bandeja de soporte | AgroConecta';
@@ -253,10 +296,24 @@ document.addEventListener('DOMContentLoaded', () => {
     await refreshOpenChats();
   }
 
+  function showSupportAlert(tickets) {
+    const newest = [...tickets].sort((a, b) => Number(b.id) - Number(a.id))[0];
+    if (!newest) return;
+    alertTicketId = Number(newest.id);
+    alertMessage.textContent = tickets.length === 1
+      ? `La consulta #${newest.id} (${newest.asunto}) necesita atención.`
+      : `Hay ${tickets.length} consultas nuevas o con mensajes pendientes. La más reciente es #${newest.id}: ${newest.asunto}.`;
+    alertOpenButton.textContent = `Abrir consulta #${newest.id}`;
+    alertBanner.hidden = false;
+    playAlertSound();
+    tickets.forEach(showTicketNotification);
+  }
+
   function showTicketNotification(ticket) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const notification = new Notification(`Nueva consulta #${ticket.id}`, {
-      body: `${ticket.asunto}: ${ticket.ultimo_tipo_autor === 'assistant'
+      body: `${ticket.asunto}: ${ticket.ultimo_remitente === 'assistant' ||
+        ticket.ultimo_tipo_autor === 'assistant'
         ? ticket.mensaje : ticket.ultimo_mensaje || ticket.mensaje}`
     });
     notification.onclick = () => {
@@ -269,16 +326,34 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  alertOpenButton.addEventListener('click', () => {
+    if (!alertTicketId) return;
+    const openButton = ticketList.querySelector(
+      `[data-ticket-id="${alertTicketId}"] [data-ticket-open]`
+    );
+    openButton?.click();
+  });
+  alertDismissButton.addEventListener('click', () => {
+    alertBanner.hidden = true;
+  });
+
   notificationButton.addEventListener('click', async () => {
+    const soundPromise = enableAlertSound();
     if (!('Notification' in window)) {
-      setStatus('Este navegador no admite notificaciones del escritorio.', true);
+      const soundEnabled = await soundPromise;
+      setStatus(soundEnabled
+        ? 'Sonido de alertas activado; este navegador no admite avisos nativos.'
+        : 'Este navegador no admite notificaciones ni sonido de alertas.', true);
       return;
     }
     try {
       const permission = await Notification.requestPermission();
+      const soundEnabled = await soundPromise;
       if (permission === 'granted') {
         notificationButton.textContent = 'Avisos del navegador activados';
-        setStatus('Recibirás avisos mientras la bandeja esté abierta.');
+        setStatus(soundEnabled
+          ? 'Recibirás avisos y sonido mientras la bandeja esté abierta.'
+          : 'Recibirás avisos del navegador mientras la bandeja esté abierta.');
       } else {
         setStatus('El navegador no autorizó las notificaciones.', true);
       }
@@ -300,6 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loginForm.addEventListener('submit', async event => {
     event.preventDefault();
     const submit = loginForm.querySelector('button[type="submit"]');
+    void enableAlertSound();
     adminKey = keyInput.value;
     submit.disabled = true;
     setStatus('Verificando clave...');
@@ -371,6 +447,8 @@ document.addEventListener('DOMContentLoaded', () => {
     ticketList.replaceChildren();
     openChats.clear();
     chatDock.replaceChildren();
+    alertBanner.hidden = true;
+    alertTicketId = null;
     toolbar.hidden = true;
     loginForm.hidden = false;
     setStatus('Bandeja cerrada.');

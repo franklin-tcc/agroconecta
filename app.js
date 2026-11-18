@@ -156,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const supportChatForm = document.getElementById('supportChatForm');
   const supportTopicOptions = document.getElementById('supportTopicOptions');
   const supportTranscriptStorageKey = 'agro_support_transcript';
+  const supportTranscriptLimit = 500;
   let supportTranscript = [];
   let supportTopic = 'Consulta desde el asistente';
   try {
@@ -163,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (Array.isArray(storedTranscript)) {
       supportTranscript = storedTranscript.filter(item =>
         ['user', 'assistant'].includes(item?.role) && typeof item.content === 'string'
-      ).slice(-40);
+      ).slice(-supportTranscriptLimit);
     }
   } catch (error) {
     console.error('No se pudo restaurar el historial local del asistente:', error);
@@ -207,7 +208,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function persistSupportTranscript() {
     try {
-      sessionStorage.setItem(supportTranscriptStorageKey, JSON.stringify(supportTranscript.slice(-40)));
+      sessionStorage.setItem(supportTranscriptStorageKey,
+        JSON.stringify(supportTranscript.slice(-supportTranscriptLimit)));
     } catch (error) {
       console.error('No se pudo conservar el historial del asistente:', error);
     }
@@ -216,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function addSupportTranscriptMessage(role, content) {
     const message = { role, content };
     supportTranscript.push(message);
-    supportTranscript = supportTranscript.slice(-40);
+    supportTranscript = supportTranscript.slice(-supportTranscriptLimit);
     persistSupportTranscript();
     agregarMensajeChat(content, role === 'assistant' ? 'assistant' : 'user');
   }
@@ -258,13 +260,16 @@ document.addEventListener('DOMContentLoaded', () => {
   supportChatToggle?.addEventListener('click', () => setChatOpen(supportChatPanel.hidden));
   document.getElementById('supportChatClose')?.addEventListener('click', () => setChatOpen(false));
   async function loadSupportTicket(ticketId, replace = false) {
-    const { messages } = await apiRequest(`/api/support/tickets/${ticketId}/messages`);
+    const lastId = replace ? 0 :
+      Number(supportChatMessages.querySelector('[data-support-message-id]:last-child')?.dataset.supportMessageId) || 0;
+    const { messages } = await apiRequest(
+      `/api/support/tickets/${ticketId}/messages?after=${lastId}`
+    );
     if (replace) {
       supportChatMessages.replaceChildren();
       showSupportTopics(false);
     }
-    const lastId = Number(supportChatMessages.querySelector('[data-support-message-id]:last-child')?.dataset.supportMessageId) || 0;
-    messages.filter(message => replace || message.id > lastId).forEach(message => {
+    messages.forEach(message => {
       const sender = message.remitente === 'admin' || message.remitente === 'assistant'
         ? message.remitente : 'user';
       agregarMensajeChat(message.contenido, sender, null, message.id);
@@ -298,8 +303,18 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const response = await apiRequest('/api/support/assistant', {
         method: 'POST',
-        body: JSON.stringify({ mensaje: message })
+        body: JSON.stringify({
+          asunto: supportTopic,
+          mensaje: message,
+          historial: supportTranscript
+        })
       });
+      if (response.derivado && response.ticketId) {
+        activateSupportTicket(response.ticketId);
+        setChatOpen(true);
+        showToast(response.message || response.respuesta);
+        return;
+      }
       addSupportTranscriptMessage('assistant', response.respuesta);
       showResolutionPrompt(response.resuelto !== false);
     } catch (error) {
@@ -314,14 +329,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function escalateSupportConversation() {
     addSupportTranscriptMessage('user', 'No, necesito ayuda de una persona.');
-    addSupportTranscriptMessage('assistant', 'De acuerdo. Estoy enviando esta conversación completa al administrador.');
     removeSupportFeedback();
     try {
       const result = await apiRequest('/api/support/escalate', {
         method: 'POST',
         body: JSON.stringify({
           asunto: supportTopic,
-          transcript: supportTranscript
+          historial: supportTranscript
         })
       });
       activateSupportTicket(result.ticketId);
@@ -1830,7 +1844,8 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({
             asunto: document.getElementById('supportSubject').value.trim(),
             email: document.getElementById('supportEmail').value.trim(),
-            mensaje: message
+            mensaje: message,
+            historial: supportTranscript
           })
         });
       form.reset();

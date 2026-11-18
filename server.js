@@ -631,6 +631,48 @@ async function sendSmtpEmail(user, subjectText, text) {
   return true;
 }
 
+let supportEmailConfigurationWarningShown = false;
+
+function notifyAdminOfSupportTicket(ticket) {
+  const recipient = normalizeEmail(process.env.ADMIN_NOTIFY_EMAIL || process.env.SMTP_USER);
+  const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  if (!recipient || !smtpConfigured) {
+    if (!supportEmailConfigurationWarningShown) {
+      console.warn('No se enviarán alertas de soporte por correo: configura ADMIN_NOTIFY_EMAIL o SMTP_USER y las credenciales SMTP.');
+      supportEmailConfigurationWarningShown = true;
+    }
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    console.error('No se pudo enviar la alerta de soporte: ADMIN_NOTIFY_EMAIL o SMTP_USER no contiene un correo válido.');
+    return;
+  }
+
+  const adminUrl = process.env.APP_BASE_URL
+    ? `${process.env.APP_BASE_URL.replace(/\/+$/, '')}/admin.html`
+    : 'admin.html';
+  const text = [
+    `Se creó la consulta de soporte #${ticket.id}.`,
+    `Usuario: ${ticket.name || 'Usuario de AgroConecta'}`,
+    `Correo: ${ticket.email || 'No proporcionado'}`,
+    `Asunto: ${ticket.subject}`,
+    '',
+    'Resumen:',
+    ticket.message.slice(0, 1200),
+    '',
+    `Abrir bandeja: ${adminUrl}`
+  ].join('\n');
+
+  void sendSmtpEmail({ nombre: 'Administración', email: recipient },
+    `Nueva consulta de soporte #${ticket.id}`, text)
+    .then(sent => {
+      if (!sent) console.error(`No se envió la alerta por correo de la consulta #${ticket.id}.`);
+    })
+    .catch(error => {
+      console.error(`No se pudo enviar la alerta por correo de la consulta #${ticket.id}:`, error.message);
+    });
+}
+
 async function sendPasswordResetEmail(user, resetUrl) {
   const text = `Hola ${user.nombre},\n\nAbre este enlace para cambiar tu contraseña de AgroConecta antes de 20 minutos:\n${resetUrl}\n\nSi no solicitaste este cambio, ignora el correo.`;
   return sendSmtpEmail(user, 'Restablece tu contraseña de AgroConecta', text);
@@ -830,11 +872,11 @@ async function createTransportConversations(orderId, buyerId, farmerId, driverId
   await createConversation(orderId, 'transporte', [farmerId, driverId], driverId, 'productor-transportista');
 }
 
-function createTicket({
-  userId = null, email = '', subject = 'Consulta de soporte', message, transcript = []
+async function createTicket({
+  userId = null, name = '', email = '', subject = 'Consulta de soporte', message, transcript = []
 }) {
   const accessToken = crypto.randomBytes(32).toString('base64url');
-  return transaction(async () => {
+  const ticket = await transaction(async () => {
     const savedTranscript = transcript.length
       ? transcript
       : [{ role: 'user', content: cleanText(message, 1800) }];
@@ -857,6 +899,14 @@ function createTicket({
     }
     return { id: result.id, accessToken };
   });
+  notifyAdminOfSupportTicket({
+    id: ticket.id,
+    name: cleanText(name, 120),
+    email: normalizeEmail(email),
+    subject: cleanText(subject, 160),
+    message: cleanText(message, 1800)
+  });
+  return ticket;
 }
 
 function setSupportTicketCookie(res, ticketId, accessToken) {
@@ -1547,74 +1597,150 @@ app.post('/api/conversations/:id/messages', requireAuth, async (req, res) => {
   res.status(201).json({ message });
 });
 
-const assistantAnswers = [
-  [/\b(hola|buenos dias|buenas tardes|buenas noches)\b/i,
-    '¡Hola! Soy el asistente de AgroConecta. Puedo guiarte paso a paso con tu cuenta, compras, publicaciones, chats, transporte, pagos y seguridad. Cuéntame qué intentas hacer y qué parte no te sale.'],
-  [/\b(recuper|contrasen|iniciar sesion|ingresar|codigo de verificacion|clave)\b/i,
-    'En “Mi cuenta”, ingresa el correo y la contraseña de tu registro. Si la olvidaste, pulsa “Olvidé mi contraseña”, elige correo o WhatsApp, solicita el código y sigue los pasos para crear otra clave. El envío solo funciona cuando el proveedor correspondiente está configurado; nunca compartas el código con otra persona.'],
-  [/\b(registr|crear cuenta|correo unico|perfil|rol)\b/i,
-    'Para registrarte, abre “Registrarse” y elige comprador, agricultor o transportista. Completa los datos solicitados y crea una contraseña. Cada correo corresponde a una cuenta; luego inicia sesión desde “Mi cuenta”. Tu panel muestra herramientas según el perfil elegido.'],
-  [/\b(compr|carrito|pedido|solicitud de compra|direccion|entrega)\b/i,
-    'Para comprar, inicia sesión como comprador, añade al carrito una cosecha publicada, indica la cantidad y confirma la dirección de entrega. “Enviar solicitud de compra” crea el pedido y abre el chat privado con el agricultor. Revisa con él disponibilidad, precio final, fecha y condiciones antes de cerrar el trato.'],
-  [/\b(productor|agricult|public|editar|foto|imagen|pausar|activar|cosecha)\b/i,
-    'El perfil de agricultor tiene su propio panel. En “Mis cosechas” completa nombre, categoría, región, precio, unidad, cantidad y descripción; puedes agregar una foto JPG, PNG o WebP. Después puedes editar la publicación, pausarla o reactivarla. Los compradores solo pueden solicitar cosechas que estén activas y disponibles.'],
-  [/\b(transport|delivery|envio|flete|ruta|conductor)\b/i,
-    'Compradores y agricultores pueden publicar una solicitud desde “Tablero de transporte”, asociándola a un pedido o indicando carga, origen y destino. El transportista revisa la ruta y propone su tarifa. Cuando se acepta, queda disponible el chat grupal para comprador, agricultor y transportista, además de chats privados entre cada pareja. Acuerden horario, precio y punto de recojo antes del viaje.'],
-  [/\b(chat|mensaje|convers|contactar|hablar con)\b/i,
-    'Abre la pestaña “Chats” de tu cuenta para ver todas tus conversaciones en un solo lugar. Encontrarás el chat privado del pedido entre comprador y agricultor; si hay transporte asignado, también aparecen el grupo de los tres y los chats privados de comprador-transportista y agricultor-transportista. Los mensajes se actualizan automáticamente mientras la página está abierta.'],
-  [/\b(pago|yape|plin|transfer|efectivo|deposit|comprobante)\b/i,
-    'AgroConecta facilita el contacto, pero esta versión no cobra ni custodia dinero. Comprador y agricultor acuerdan directamente cómo y cuándo pagar; si hay transporte, acuerdan su tarifa con el transportista. Verifica los datos del destinatario y conserva tus comprobantes. No envíes contraseñas, códigos ni datos completos de tarjetas.'],
-  [/\b(cancel|anular|cambiar pedido|estado del pedido|recibir|recepcion)\b/i,
-    'En “Mi panel” puedes revisar el estado de tus pedidos. El agricultor actualiza la preparación y el comprador confirma la recepción cuando corresponda. Si necesitas cambiar o cancelar algo, avisa cuanto antes por el chat del pedido y acuerda la solución con las demás personas; la plataforma no cancela ni reembolsa pagos automáticamente.'],
-  [/\b(licencia|soat|vehiculo|placa|capacidad|verificar)\b/i,
-    'El registro de transportista recoge información del vehículo, capacidad y licencia para presentar el perfil. La plataforma no verifica automáticamente esos documentos ni sustituye las verificaciones que deben hacer las partes. Confirma por tu cuenta los datos, la ruta, la carga y las condiciones antes de aceptar.'],
-  [/\b(error|no puedo|no aparece|no carga|fall|problema tecnico)\b/i,
-    'Para orientarte mejor, dime en qué sección estabas (cuenta, catálogo, pedido, transporte o chats), qué botón presionaste y qué mensaje apareció. No compartas tu contraseña ni códigos. Si después de revisar los pasos el problema continúa, puedes transferir esta misma conversación a soporte.'],
-  [/\b(nosotros|agroconecta|plataforma|funciona|comision)\b/i,
-    'AgroConecta conecta a compradores con agricultores y transportistas. La plataforma permite publicar cosechas, enviar solicitudes de compra, coordinar transporte y conversar por chats privados o grupales. Los usuarios acuerdan directamente disponibilidad, precio, pago y entrega; AgroConecta no procesa pagos ni garantiza acuerdos entre usuarios.'],
-  [/registr|crear.*cuenta|correo.*unico/i, 'Cada correo solo puede registrar una cuenta y un perfil. Después de crearla, la sesión queda iniciada; usa “Mi cuenta” para volver a entrar. Si olvidaste tu clave, solicita recuperación desde el acceso.'],
-  [/contrasen|ingresar|iniciar sesion|recuper|clave/i, 'Inicia sesión desde “Mi cuenta” con el correo y la contraseña de tu registro. En “Olvidé mi contraseña” puedes pedir un código de un solo uso por correo o WhatsApp; el canal debe estar configurado por el administrador.'],
-  [/compr|carrito|pedido/i, 'Inicia sesión como comprador, agrega al carrito cosechas publicadas por agricultores, confirma dirección y cantidad, y envía la solicitud. El chat del pedido te conecta con el productor; los pagos se acuerdan directamente y no se procesan aquí.'],
-  [/product|agricult|cosecha|public|editar|foto/i, 'La cuenta de agricultor incluye un panel para publicar, editar y pausar cosechas, con fotografía JPG, PNG o WebP optimizada. Las unidades disponibles se actualizan cuando se solicita un pedido.'],
-  [/transport|delivery|envio|flete|conductor/i, 'En el Tablero de transporte, compradores y agricultores publican una ruta independiente o la vinculan a un pedido. El transportista acepta la solicitud con una tarifa y, si está vinculada al pedido, se abre un chat grupal con comprador, agricultor y transportista.'],
-  [/chat|mensaje|convers/i, 'Los chats de compra conectan al comprador con el agricultor. El tablero de transporte abre una conversación para coordinar ruta y tarifa; si la solicitud está vinculada a un pedido, participan comprador, agricultor y transportista.'],
-  [/pago|yape|plin|transfer|efectivo/i, 'AgroConecta no recibe ni custodia pagos en esta versión. Comprador y agricultor deben acordar por el chat un método de pago y guardar sus comprobantes. No compartas códigos de verificación.'],
-  [/devol|reembols|cancel|danad|reclamo/i, 'Si surge un problema, conserva comprobantes y fotos, comunica el caso por el chat y contacta soporte desde el menú. Las solicitudes se revisan; la web no procesa reembolsos automáticamente.'],
-  [/licencia|soat|vehicul|verific/i, 'El registro de transportista recopila datos del vehículo y la licencia, pero no carga ni verifica documentos. No envíes documentos sensibles por el chat.'],
-  [/soporte|administr|ayuda humana|persona|agente/i, 'Si no logro resolverlo, dejaré tu consulta en la bandeja del administrador y podrás continuar en el mismo chat cuando responda. No incluyas contraseñas ni datos bancarios.'],
-  [/hola|buenos dias|buenas tardes|buenas noches/i, 'Hola. Puedo ayudarte con cuentas, catálogo, pedidos, publicaciones agrícolas, transporte, chats, pagos y soporte. ¿Qué necesitas hacer en AgroConecta?']
+const SUPPORT_HISTORY_LIMIT = 500;
+const supportKnowledge = [
+  {
+    pattern: /\b(registr|crear (?:una )?cuenta|dni|ruc|correo unico|perfil|rol)/i,
+    answer: 'Claro, te guío. 1) Abre “Registrarse” y elige el perfil que usarás: Comprador, Agricultor/Productor o Transportista/Distribuidor. 2) Completa tus datos; el DNI debe tener 8 dígitos o el RUC 11, y el correo debe tener formato válido y no estar registrado. 3) Crea una contraseña de al menos 8 caracteres y envía el formulario. La validación revisa el formato y la unicidad en AgroConecta; no consulta un registro externo de identidad. Al terminar, tu sesión queda iniciada y verás el panel de tu perfil.'
+  },
+  {
+    pattern: /\b(recuper|olvide|olvidada|contrasen|clave|codigo de verificacion|iniciar sesion|ingresar)/i,
+    answer: 'Para entrar, pulsa “Mi cuenta” e ingresa el correo y la contraseña registrados. Si olvidaste la contraseña: 1) En “Mi cuenta”, pulsa “Olvidé mi contraseña”. 2) Selecciona correo o WhatsApp e ingresa el dato asociado a tu cuenta. 3) Escribe el código de un solo uso y crea una contraseña nueva. El código vence en 10 minutos. El envío solo funciona si el administrador configuró SMTP o WhatsApp Business; una línea de WhatsApp de contacto por sí sola no envía códigos. Nunca compartas el código.'
+  },
+  {
+    pattern: /\b(catalog|producto|buscar|filtro|categoria|region|cosechas disponibles)/i,
+    answer: 'En “Catálogo” puedes revisar las cosechas activas. Usa el buscador para escribir el nombre del producto y los filtros para acotar por categoría o región. Abre una tarjeta para revisar precio, unidad, cantidad disponible, productor y descripción. Si no aparece un producto, comprueba los filtros o consulta al agricultor por el chat si volverá a publicar stock.'
+  },
+  {
+    pattern: /\b(compr|carrito|pedido|solicitud de compra|direccion de entrega|cantidad)/i,
+    answer: 'Para hacer una compra: 1) Inicia sesión con el perfil Comprador. 2) En “Catálogo”, elige una cosecha activa y añade la cantidad al carrito. 3) Revisa el carrito y confirma la dirección de entrega para enviar la solicitud. 4) Abre “Chats” o el pedido para coordinar disponibilidad, precio final, entrega y pago directamente con el agricultor. El pedido no significa que AgroConecta haya cobrado.'
+  },
+  {
+    pattern: /\b(agricult|productor|publicar|publicacion|editar|foto|imagen|precio|stock|pausar|reactivar|cosecha)/i,
+    answer: 'Desde el panel de Agricultor/Productor, abre “Mis cosechas” y elige publicar o editar. Completa producto, categoría, región, precio, unidad, cantidad y descripción. Puedes subir JPG, PNG o WebP; la imagen original puede pesar hasta 10 MB y se optimiza a un máximo de 1 MB. Guarda los cambios. Desde la misma publicación puedes actualizar precio o stock, y pausar o reactivar la cosecha; solo las publicaciones activas aparecen disponibles para comprar.'
+  },
+  {
+    pattern: /\b(transport|transportista|distribuidor|delivery|envio|flete|ruta|cotiz|tarifa|origen|destino)/i,
+    answer: 'El “Tablero de transporte” admite dos opciones: 1) Publicar una solicitud independiente con carga, origen, destino y fecha; o 2) vincular el transporte a un pedido existente. Compradores y agricultores pueden publicar la solicitud. El transportista revisa los datos y envía su cotización; quien publicó la solicitud puede compararla y aceptarla. Antes de confirmar, acuerden precio, recojo, horario, entrega y condiciones por el chat.'
+  },
+  {
+    pattern: /\b(chat|mensaje|convers|contact|hablar con|comunicar)/i,
+    answer: 'Abre “Chats” para ver tus conversaciones. Cada pedido permite un chat privado entre Comprador y Agricultor/Productor. Cuando se coordina transporte, también se habilitan chats privados con el transportista y un chat grupal para Comprador, Agricultor y Transportista. Entra al pedido o solicitud correspondiente para encontrar el hilo correcto; los mensajes se actualizan mientras mantienes la aplicación abierta.'
+  },
+  {
+    pattern: /\b(pago|yape|plin|transfer|efectivo|deposit|comprobante|dinero)/i,
+    answer: 'AgroConecta facilita el contacto, pero no cobra ni guarda dinero en esta versión. Comprador y agricultor acuerdan el método y momento del pago entre ellos; si hay transporte, acuerdan aparte la tarifa del flete. Verifica el destinatario antes de pagar y guarda el comprobante. No compartas contraseñas, códigos de recuperación, claves bancarias ni los datos completos de tu tarjeta.'
+  },
+  {
+    pattern: /\b(estaf|engan|fraude|sospech|report|denunci|suplant|seguridad)/i,
+    answer: 'Lamento que estés pasando por eso. No envíes más dinero ni códigos. Conserva el número del pedido, los mensajes, comprobantes y capturas; no borres el chat. Desde Soporte explica qué ocurrió, quién participó y cuándo. Si necesitas que una persona revise el caso, pulsa “No, necesito ayuda” o pide hablar con un administrador y el historial se transferirá en este mismo chat.'
+  },
+  {
+    pattern: /\b(danad|mal estado|demora|retras|cancel|anular|devol|reembols|reclamo|no lleg|entrega)/i,
+    answer: 'Siento el inconveniente. 1) Guarda el número del pedido y evidencia (fotos del producto o constancia de entrega). 2) Escribe al agricultor o transportista en el chat del pedido para acordar una solución y deja constancia de la fecha y el estado. 3) Si no hay respuesta o no llegan a un acuerdo, envía el detalle a Soporte y solicita un administrador. AgroConecta no cancela pagos ni emite reembolsos automáticamente.'
+  },
+  {
+    pattern: /\b(ubicacion|mapa|direccion|origen|lugar)/i,
+    answer: 'La ubicación o dirección que compartes ayuda a describir el perfil, la cosecha o la ruta de transporte. Antes de publicar, revisa que el punto de origen, destino y dirección de entrega sean correctos. Comparte por el chat solo la información necesaria para coordinar una operación; evita publicar datos personales sensibles.'
+  },
+  {
+    pattern: /\b(soporte|administr|ayud|problema|error|no puedo|no aparece|no carga|fall)/i,
+    answer: 'Con gusto te ayudo. Dime qué intentabas hacer, en qué sección estabas y qué mensaje apareció; no envíes contraseñas ni códigos. Si la guía no resuelve el problema, elige “No, necesito ayuda” para transferir el historial completo a un administrador, que podrá responderte en este mismo chat.'
+  },
+  {
+    pattern: /\b(hola|buenos dias|buenas tardes|buenas noches)\b/i,
+    answer: '¡Hola! Soy el asistente de AgroConecta. Puedo guiarte con cuentas, catálogo, compras, publicaciones, transporte, chats, pagos y reportes. Cuéntame qué quieres hacer y te daré pasos concretos.'
+  }
 ];
+
+const supportHumanRequestPatterns = [
+  /\b(?:hablar|contactar|comunicarme|conectarme|derivar|transferir)\b.{0,50}\b(?:administrador|soporte|agente|persona|humano|asesor)\b/i,
+  /\b(?:necesito|quiero|prefiero|solicito|pido)\b.{0,40}\b(?:ayuda|soporte)\b.{0,30}\b(?:persona|agente|administrador|humano|asesor)\b/i,
+  /\b(?:necesito|quiero|solicito|pido)\b.{0,35}\b(?:una persona|un agente|un administrador|alguien|un humano)\b/i,
+  /\b(?:no (?:me )?(?:resolvio|soluciono|ayudo|sirvio)|no se (?:resolvio|soluciono))\b/i
+];
+
+function normalizeSupportText(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function normalizeSupportTranscript(raw) {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.length > SUPPORT_HISTORY_LIMIT) return null;
+  const transcript = raw.map(item => ({
+    role: item?.role === 'assistant' || item?.role === 'user' ? item.role : '',
+    content: cleanText(item?.content, 1800)
+  }));
+  return transcript.some(item => !item.role || !item.content) ? null : transcript;
+}
+
+function appendSupportMessageIfMissing(transcript, role, content) {
+  const last = transcript[transcript.length - 1];
+  if (last?.role === role && last.content === content) return transcript;
+  if (transcript.length >= SUPPORT_HISTORY_LIMIT) return null;
+  return [...transcript, { role, content }];
+}
+
+function getSupportAssistantAnswer(message) {
+  const normalizedMessage = normalizeSupportText(message);
+  return supportKnowledge.find(entry => entry.pattern.test(normalizedMessage))?.answer || null;
+}
 
 app.post('/api/support/assistant', rateLimit(30, 60 * 1000), async (req, res) => {
   const message = cleanText(req.body?.mensaje, 1800);
   if (!message) return res.status(400).json({ error: 'Escribe una consulta.' });
-  const normalizedMessage = message.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const match = assistantAnswers.find(([pattern]) => pattern.test(normalizedMessage));
-  if (match) return res.json({ respuesta: match[1], resuelto: true, derivado: false });
+  const rawHistory = req.body?.historial ?? req.body?.transcript;
+  const history = normalizeSupportTranscript(rawHistory);
+  if (!history) return res.status(400).json({ error: 'El historial de la conversación no es válido.' });
+
+  const normalizedMessage = normalizeSupportText(message);
+  const asksForPerson = supportHumanRequestPatterns.some(pattern => pattern.test(normalizedMessage));
+  if (asksForPerson) {
+    const transcript = appendSupportMessageIfMissing(history, 'user', message);
+    if (!transcript) return res.status(400).json({ error: 'La conversación es demasiado extensa para transferirla completa.' });
+    const user = await currentUser(req);
+    const ticket = await createTicket({
+      userId: user?.id || null,
+      name: user?.nombre || '',
+      email: user?.email || req.body?.email || '',
+      subject: cleanText(req.body?.asunto, 160) || 'Ayuda solicitada desde el asistente',
+      message,
+      transcript
+    });
+    setSupportTicketCookie(res, ticket.id, ticket.accessToken);
+    const response = `Te transferí con un administrador en la consulta #${ticket.id}. Puedes continuar en este mismo chat.`;
+    return res.status(201).json({
+      respuesta: response,
+      message: response,
+      resuelto: false,
+      derivado: true,
+      ticketId: ticket.id
+    });
+  }
+
+  const answer = getSupportAssistantAnswer(message);
+  if (answer) return res.json({ respuesta: answer, resuelto: true, derivado: false });
   res.json({
-    respuesta: 'No encontré una respuesta confiable. Este asistente solo atiende temas de AgroConecta; si tu consulta sí es sobre una función de la plataforma, dime qué intentabas hacer y qué ocurrió. Si ya lo explicaste y todavía necesitas ayuda, puedes pedir que un administrador siga en este mismo chat.',
+    respuesta: 'No tengo una respuesta confiable para esa pregunta. Dime qué intentabas hacer, en qué sección estabas y qué pasó; si necesitas ayuda humana, puedes pedir un administrador y enviaré esta conversación completa.',
     resuelto: false,
     derivado: false
   });
 });
 
 app.post('/api/support/escalate', rateLimit(10, 15 * 60 * 1000), async (req, res) => {
-  const rawTranscript = req.body?.transcript;
-  if (!Array.isArray(rawTranscript) || rawTranscript.length < 1 || rawTranscript.length > 40) {
+  const rawTranscript = req.body?.historial ?? req.body?.transcript;
+  const transcript = normalizeSupportTranscript(rawTranscript);
+  if (!transcript || transcript.length < 1) {
     return res.status(400).json({ error: 'No se encontró el historial de esta conversación. Vuelve a intentarlo.' });
   }
-  const transcript = rawTranscript.map(item => ({
-    role: item?.role === 'assistant' ? 'assistant' : item?.role === 'user' ? 'user' : '',
-    content: cleanText(item?.content, 1800)
-  }));
-  if (transcript.some(item => !item.role || !item.content) ||
-      !transcript.some(item => item.role === 'user')) {
+  if (!transcript.some(item => item.role === 'user')) {
     return res.status(400).json({ error: 'El historial de la conversación no es válido.' });
   }
   const user = await currentUser(req);
   const lastUserMessage = [...transcript].reverse().find(item => item.role === 'user');
   const ticket = await createTicket({
     userId: user?.id || null,
+    name: user?.nombre || '',
     email: user?.email || req.body?.email || '',
     subject: cleanText(req.body?.asunto, 160) || 'Ayuda solicitada desde el asistente',
     message: lastUserMessage.content,
@@ -1631,12 +1757,19 @@ app.post('/api/support/tickets', rateLimit(10, 15 * 60 * 1000), async (req, res)
   const message = cleanText(req.body?.mensaje, 1800);
   const subject = cleanText(req.body?.asunto, 160);
   if (!message || !subject) return res.status(400).json({ error: 'Escribe el asunto y el detalle de tu consulta.' });
+  const rawHistory = req.body?.historial ?? req.body?.transcript;
+  const history = normalizeSupportTranscript(rawHistory);
+  if (!history) return res.status(400).json({ error: 'El historial de la conversación no es válido.' });
+  const transcript = appendSupportMessageIfMissing(history, 'user', message);
+  if (!transcript) return res.status(400).json({ error: 'La conversación es demasiado extensa para transferirla completa.' });
   const user = await currentUser(req);
   const ticket = await createTicket({
     userId: user?.id || null,
+    name: user?.nombre || '',
     email: user?.email || req.body?.email || '',
     subject,
-    message
+    message,
+    transcript
   });
   setSupportTicketCookie(res, ticket.id, ticket.accessToken);
   res.status(201).json({
@@ -1709,7 +1842,9 @@ app.get('/api/admin/tickets', requireAdminKey, async (req, res) => {
       (SELECT contenido FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje,
       (SELECT created_at FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje_fecha,
       (SELECT id FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_mensaje_id,
-      (SELECT remitente FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_remitente,
+      (SELECT CASE WHEN m.remitente='admin' THEN 'admin'
+        WHEN m.tipo_autor='assistant' THEN 'assistant' ELSE 'usuario' END
+        FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_remitente,
       (SELECT CASE WHEN m.remitente='admin' THEN 'admin' ELSE m.tipo_autor END
         FROM SupportMessages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS ultimo_tipo_autor
     FROM SupportTickets t ORDER BY t.id DESC LIMIT 200`) });

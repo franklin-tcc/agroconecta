@@ -14,7 +14,7 @@
       <span class="sub-heading">Acceso privado</span>
       <h1>Bandeja de soporte</h1>
       <p>Abre esta bandeja en el mismo dominio que usan los usuarios. Al iniciar sesión verás las consultas pendientes; abre varios chats en ventanas independientes y responde en el mismo hilo. La bandeja se actualiza cada tres segundos mientras está abierta; la clave se mantiene solo en esta página.</p>
-      <p class="admin-setup-note">Configura <code>ADMIN_API_KEY</code> como variable secreta en Render o en el archivo local <code>.env</code>. No uses una clave corta ni la compartas.</p>
+      <p class="admin-setup-note">Configura <code>ADMIN_API_KEY</code> como variable secreta en Render o en el archivo local <code>.env</code>. Para correos de alerta configura <code>ADMIN_NOTIFY_EMAIL</code> (o usa <code>SMTP_USER</code>) junto con SMTP. No compartas estas claves.</p>
     </header>
 
     <form id="adminLoginForm" class="admin-login">
@@ -30,6 +30,16 @@
       <button id="refreshTickets" class="btn btn-outline-dark" type="button">Actualizar consultas</button>
       <button id="adminLogout" class="btn btn-outline-dark" type="button">Cerrar bandeja</button>
     </div>
+    <section id="adminAlert" class="admin-alert" role="alert" aria-live="assertive" hidden>
+      <div>
+        <strong>Hay consultas que necesitan atención</strong>
+        <p id="adminAlertMessage"></p>
+      </div>
+      <div class="admin-alert-actions">
+        <button id="adminAlertOpen" class="btn btn-primary" type="button">Abrir consulta</button>
+        <button id="adminAlertDismiss" class="btn btn-outline-dark" type="button">Ocultar aviso</button>
+      </div>
+    </section>
     <section id="adminTickets" class="admin-tickets" aria-live="polite"></section>
     <div id="adminChatDock" class="admin-chat-dock" aria-label="Chats abiertos de soporte"></div>
   </main>
