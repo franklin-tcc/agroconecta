@@ -845,7 +845,11 @@
     </button>
     <section class="support-chat-panel" id="supportChatPanel" aria-label="Asistente de ayuda" hidden>
       <div class="chat-heading">
-        <div><strong>Asistente AgroConecta</strong><small>Guía de compras, cosechas y transporte</small></div>
+        <div>
+          <strong id="supportChatTitle">Asistente AgroConecta</strong>
+          <small id="supportChatSubtitle">Guía de compras, cosechas y transporte</small>
+        </div>
+        <button type="button" class="support-chat-mode-toggle" id="supportChatModeToggle" hidden>Continuar con soporte</button>
         <button type="button" id="supportChatClose" aria-label="Cerrar asistente">×</button>
       </div>
       <div class="chat-messages" id="supportChatMessages" aria-live="polite">

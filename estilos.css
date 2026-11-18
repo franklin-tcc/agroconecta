@@ -2065,6 +2065,25 @@ body {
   cursor: pointer;
 }
 
+.chat-heading > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chat-heading button.support-chat-mode-toggle {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.chat-heading button.support-chat-mode-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .chat-messages {
   display: flex;
   flex: 1;
