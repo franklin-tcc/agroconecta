@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tickets.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'admin-empty';
-      empty.textContent = 'No hay consultas registradas.';
+      empty.textContent = `No hay consultas en ${window.location.origin}. Comprueba que los usuarios enviaron el formulario desde este mismo dominio.`;
       ticketList.appendChild(empty);
       return;
     }
@@ -346,6 +346,11 @@ document.addEventListener('DOMContentLoaded', () => {
         : 'Este navegador no admite notificaciones ni sonido de alertas.', true);
       return;
     }
+    if (Notification.permission === 'denied') {
+      await soundPromise;
+      setStatus('Chrome bloqueó estos avisos. Abre los permisos del sitio junto a la barra de direcciones, cambia Notificaciones a Permitir y recarga esta página.', true);
+      return;
+    }
     try {
       const permission = await Notification.requestPermission();
       const soundEnabled = await soundPromise;
@@ -355,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ? 'Recibirás avisos y sonido mientras la bandeja esté abierta.'
           : 'Recibirás avisos del navegador mientras la bandeja esté abierta.');
       } else {
-        setStatus('El navegador no autorizó las notificaciones.', true);
+        setStatus('No se concedió el permiso. En Chrome, abre los permisos del sitio junto a la barra de direcciones, cambia Notificaciones a Permitir y recarga esta página.', true);
       }
     } catch (error) {
       setStatus(`No se pudo activar las notificaciones: ${error.message}`, true);
