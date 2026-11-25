@@ -936,7 +936,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // --- SUSCRIPCIONES ---
+  // --- SUSCRIPCIONES (PUNTO A & C) ---
   async function activarPlanSuscripcion(codigo) {
     if (!sessionUser || sessionUser.rol !== 'Productor') {
       seleccionarRol('Productor');
@@ -966,7 +966,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // --- MÓDULO DE TRANSPORTE Y COTIZADOR ---
+  // --- MÓDULO DE TRANSPORTE Y COTIZADOR (PUNTO B & C) ---
   document.getElementById('openTransportCalculatorBtn')?.addEventListener('click', () => {
     if (!sessionUser) {
       abrirModal(profileModal);
@@ -1108,16 +1108,6 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast(error.message);
     }
   });
-
-  function escapeHTML(value) {
-    return String(value ?? '').replace(/[&<>"']/g, character => ({
-      '&': '&',
-      '<': '<',
-      '>': '>',
-      '"': '"',
-      "'": '''
-    })[character]);
-  }
 
   function updateAuthUI() {
     const loggedIn = Boolean(sessionUser);
