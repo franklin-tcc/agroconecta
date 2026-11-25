@@ -213,6 +213,8 @@ const ready = new Promise((resolve, reject) => {
         licencia_posterior_url TEXT NOT NULL DEFAULT '',
         FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
       )`);
+      await ensureColumn('Transportistas', 'disponible', 'INTEGER NOT NULL DEFAULT 1');
+      await ensureColumn('Transportistas', 'tarifa_base_km', 'REAL NOT NULL DEFAULT 2.5');
       await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_email_normalized
         ON Usuarios(lower(trim(email))) WHERE email IS NOT NULL AND trim(email) <> ''`);
       await run(`CREATE TABLE IF NOT EXISTS AuthSessions (
@@ -235,6 +237,18 @@ const ready = new Promise((resolve, reject) => {
         usuario_id INTEGER PRIMARY KEY, latitude REAL NOT NULL, longitude REAL NOT NULL,
         precision_m REAL NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+      )`);
+      await run(`CREATE TABLE IF NOT EXISTS FarmerSubscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        productor_id INTEGER NOT NULL,
+        plan_codigo TEXT NOT NULL,
+        plan_nombre TEXT NOT NULL,
+        precio_simulado REAL NOT NULL DEFAULT 0,
+        duracion_dias INTEGER NOT NULL,
+        max_publicaciones INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (productor_id) REFERENCES Usuarios(id) ON DELETE CASCADE
       )`);
       await run(`CREATE TABLE IF NOT EXISTS Orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT, comprador_id INTEGER NOT NULL,
@@ -750,7 +764,7 @@ function validateRegistration(body) {
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
     !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
     !Number.isFinite(precision) || precision < 0 || precision > 100000) {
-  return 'La ubicación geográfica no es válida. Vuelve a guardarla desde el mapa.';
+      return 'La ubicación geográfica no es válida. Vuelve a guardarla desde el mapa.';
     }
   }
   if (role === 'Distribuidor' && (!cleanText(body.vehiculo, 80) ||
@@ -817,8 +831,8 @@ async function registerAccount(req, res) {
       } else {
         await run(`INSERT INTO Transportistas
           (usuario_id, vehiculo, capacidad, placa, licencia_numero, licencia_categoria,
-           licencia_vencimiento, zonas_servicio, soat_vigente, revision_tecnica,
-           licencia_frontal_url, licencia_posterior_url)
+          licencia_vencimiento, zonas_servicio, soat_vigente, revision_tecnica,
+          licencia_frontal_url, licencia_posterior_url)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
           user.id, cleanText(body.vehiculo, 80), cleanText(body.capacidad, 80),
           cleanText(body.placa, 30), cleanText(body.licencia_numero, 50),
@@ -1185,7 +1199,69 @@ function validateProductImage(value) {
     : { value: null, error: 'El contenido del archivo no coincide con su formato de imagen.' };
 }
 
+// Obtener suscripción activa del agricultor
+app.get('/api/my/subscription', requireAuth, requireRole('Productor'), async (req, res) => {
+  const sub = await get(`SELECT * FROM FarmerSubscriptions
+    WHERE productor_id = ? AND datetime(expires_at) > datetime('now')
+    ORDER BY id DESC LIMIT 1`, [req.user.id]);
+  const countRow = await get(`SELECT COUNT(*) AS total FROM ProductListings
+    WHERE productor_id = ? AND estado = 'activo'`, [req.user.id]);
+  res.json({ subscription: sub || null, activeProducts: Number(countRow?.total || 0) });
+});
+
+// Activar plan de suscripción (Modo Simulación)
+app.post('/api/my/subscription', requireAuth, requireRole('Productor'), async (req, res) => {
+  const planes = {
+    semilla: { nombre: 'Plan Semilla (Prueba)', precio: 0, dias: 15, max: 2 },
+    cosecha_pro: { nombre: 'Plan Cosecha Pro', precio: 29, dias: 30, max: 25 },
+    agro_empresa: { nombre: 'Plan AgroEmpresa', precio: 79, dias: 90, max: 999 }
+  };
+  const codigo = String(req.body?.plan_codigo || '');
+  const plan = planes[codigo];
+  if (!plan) return res.status(400).json({ error: 'Selecciona un plan válido.' });
+
+  const expiresAt = new Date(Date.now() + plan.dias * 24 * 60 * 60 * 1000).toISOString();
+  await transaction(() => run(`INSERT INTO FarmerSubscriptions
+    (productor_id, plan_codigo, plan_nombre, precio_simulado, duracion_dias, max_publicaciones, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [req.user.id, codigo, plan.nombre, plan.precio, plan.dias, plan.max, expiresAt]
+  ));
+  res.status(201).json({ ok: true, message: `${plan.nombre} activado en modo simulación.` });
+});
+
+// Listar transportistas libres disponibles para contratar directo
+app.get('/api/transport/drivers', requireAuth, async (req, res) => {
+  const drivers = await all(`SELECT u.id, u.nombre, u.telefono, u.ubicacion_general,
+      t.vehiculo, t.capacidad, t.placa, t.zonas_servicio, t.tarifa_base_km, t.disponible
+    FROM Transportistas t JOIN Usuarios u ON u.id = t.usuario_id
+    WHERE t.disponible = 1 ORDER BY u.id DESC`);
+  res.json({ drivers });
+});
+
+// Cambiar disponibilidad y tarifa referencial del transportista
+app.patch('/api/transport/availability', requireAuth, requireRole('Distribuidor'), async (req, res) => {
+  const disponible = req.body?.disponible ? 1 : 0;
+  const tarifa = Math.max(0.5, Math.min(500, Number(req.body?.tarifa_base_km) || 2.5));
+  await transaction(() => run(
+    'UPDATE Transportistas SET disponible = ?, tarifa_base_km = ? WHERE usuario_id = ?',
+    [disponible, tarifa, req.user.id]
+  ));
+  res.json({ ok: true });
+});
+
 app.post('/api/my/products', requireAuth, requireRole('Productor'), async (req, res) => {
+  const sub = await get(`SELECT * FROM FarmerSubscriptions
+    WHERE productor_id = ? AND datetime(expires_at) > datetime('now')
+    ORDER BY id DESC LIMIT 1`, [req.user.id]);
+  if (!sub) {
+    return res.status(403).json({ error: 'SUBSCRIPTION_REQUIRED', message: 'Activa un plan de suscripción para publicar tus cosechas.' });
+  }
+  const countRow = await get(`SELECT COUNT(*) AS total FROM ProductListings
+    WHERE productor_id = ? AND estado = 'activo'`, [req.user.id]);
+  if (Number(countRow?.total || 0) >= Number(sub.max_publicaciones)) {
+    return res.status(403).json({ error: 'SUBSCRIPTION_LIMIT', message: `Tu ${sub.plan_nombre} permite hasta ${sub.max_publicaciones} publicaciones activas.` });
+  }
+
   const error = validateProduct(req.body || {});
   if (error) return res.status(400).json({ error });
   const body = req.body;
@@ -1265,7 +1341,7 @@ app.post('/api/orders', requireAuth, requireRole('Comprador'), async (req, res) 
         const total = Number((product.precio * quantities[index]).toFixed(2));
         const inserted = await run(`INSERT INTO Orders
           (comprador_id, productor_id, product_id, nombre_producto, cantidad, unidad,
-           precio_unitario, total, direccion_entrega, requiere_transporte)
+          precio_unitario, total, direccion_entrega, requiere_transporte)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
           req.user.id, product.productor_id, product.id, product.nombre, quantities[index],
           product.unidad, product.precio, total, address, req.body?.requiere_transporte ? 1 : 0
@@ -1368,7 +1444,7 @@ app.post('/api/transport/requests', requireAuth, requireRole('Comprador', 'Produ
   const farmerId = order?.productor_id || (req.user.rol === 'Productor' ? req.user.id : null);
   const result = await transaction(() => run(`INSERT INTO TransportRequests
     (creador_id, order_id, comprador_id, productor_id, carga, cantidad, unidad, origen,
-     destino, fecha_recojo, detalles)
+    destino, fecha_recojo, detalles)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     req.user.id, order?.id || null, buyerId, farmerId, cargo, quantity, unit, origin,
     destination, pickup, cleanText(req.body?.detalles, 800)
