@@ -46,7 +46,11 @@ document.addEventListener('DOMContentLoaded', () => {
       headers: { ...(options.headers || {}), ...(options.body ? { 'Content-Type': 'application/json' } : {}) }
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'No se pudo completar la solicitud.');
+    if (!response.ok) {
+      const err = new Error(payload.message || payload.error || 'No se pudo completar la solicitud.');
+      err.code = payload.error;
+      throw err;
+    }
     return payload;
   }
 
@@ -252,7 +256,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const supportTicketStatus = document.getElementById('supportTicketStatus');
   const supportTranscriptStorageKey = 'agro_support_transcript';
   const supportTranscriptLimit = 500;
-  const supportAssistantWelcome = '¡Hola! Puedo guiarte para registrarte, comprar, publicar una cosecha, coordinar transporte o recuperar tu cuenta. Escribe tu pregunta o elige un tema.';
   let supportTranscript = [];
   let supportTopic = 'Consulta desde el asistente';
   try {
@@ -665,6 +668,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const profileModal = document.getElementById('profileModal');
+  const subscriptionModal = document.getElementById('subscriptionModal');
   const profileList = document.getElementById('profileList');
   const roleInput = document.getElementById('rol');
   const registrationTitle = document.getElementById('registrationTitle');
@@ -765,7 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
             id: productId,
             nombre: productName,
             precio: parseFloat(button.dataset.precio) || 0,
-                img: button.dataset.img || '',
+            img: button.dataset.img || '',
             cantidad: 1,
             serverProductId: button.dataset.serverId ? Number(button.dataset.serverId) : null
           });
@@ -909,6 +913,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('closeCart')?.addEventListener('click', () => cerrarModal(cartModal));
   document.getElementById('closeProfile')?.addEventListener('click', () => cerrarModal(profileModal));
+  document.getElementById('closeSubscriptionModal')?.addEventListener('click', () => cerrarModal(subscriptionModal));
   window.closeCartModal = () => cerrarModal(cartModal);
 
   window.removeItem = function(index) {
@@ -918,7 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCart();
   };
 
-  [cartModal, profileModal].forEach(modal => {
+  [cartModal, profileModal, subscriptionModal].forEach(modal => {
     modal?.addEventListener('click', event => {
       if (event.target === modal) cerrarModal(modal);
     });
@@ -927,18 +932,182 @@ document.addEventListener('DOMContentLoaded', () => {
     if (event.key === 'Escape') {
       cerrarModal(cartModal);
       cerrarModal(profileModal);
+      cerrarModal(subscriptionModal);
     }
   });
 
-  function escapeHTML(value) {
-    return String(value ?? '').replace(/[&<>"']/g, character => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    })[character]);
+  // --- SUSCRIPCIONES (PUNTO A & C) ---
+  async function activarPlanSuscripcion(codigo) {
+    if (!sessionUser || sessionUser.rol !== 'Productor') {
+      seleccionarRol('Productor');
+      cambiarPestana('tab-contacto');
+      showToast('Regístrate o inicia sesión como Agricultor para activar tu plan.');
+      return;
+    }
+    try {
+      const res = await apiRequest('/api/my/subscription', {
+        method: 'POST',
+        body: JSON.stringify({ plan_codigo: codigo })
+      });
+      cerrarModal(subscriptionModal);
+      showToast(res.message || 'Plan activado en modo simulación.');
+      if (document.getElementById('tab-dashboard').classList.contains('active')) {
+        await loadDashboard();
+      }
+    } catch (error) {
+      showToast(error.message);
+    }
   }
+
+  document.addEventListener('click', event => {
+    const subBtn = event.target.closest('[data-subscribe-plan]');
+    if (subBtn) {
+      activarPlanSuscripcion(subBtn.dataset.subscribePlan);
+    }
+  });
+
+  // --- MÓDULO DE TRANSPORTE Y COTIZADOR (PUNTO B & C) ---
+  document.getElementById('openTransportCalculatorBtn')?.addEventListener('click', () => {
+    if (!sessionUser) {
+      abrirModal(profileModal);
+      renderizarPerfiles();
+      showToast('Inicia sesión para cotizar o solicitar un transportista.');
+      return;
+    }
+    cambiarPestana('tab-transport');
+    document.getElementById('quoteOrigin')?.focus();
+  });
+
+  document.getElementById('transportQuoteForm')?.addEventListener('submit', event => {
+    event.preventDefault();
+    const origen = document.getElementById('quoteOrigin').value.trim();
+    const destino = document.getElementById('quoteDestination').value.trim();
+    const km = Number(document.getElementById('quoteDistance').value) || 0;
+    const peso = Number(document.getElementById('quoteWeight').value) || 0;
+    const tipo = document.getElementById('quoteVehicleType').value;
+
+    const tarifasKm = { camioneta: 2.2, camion3t: 3.5, camion10t: 5.8, furgon: 4.5 };
+    const base = { camioneta: 35, camion3t: 65, camion10t: 120, furgon: 85 }[tipo] || 40;
+    const estimado = base + (km * (tarifasKm[tipo] || 2.5)) + (peso * 0.03);
+
+    const box = document.getElementById('quoteResultBox');
+    if (box) {
+      box.hidden = false;
+      box.innerHTML = `
+        <strong>Flete referencial estimado: S/ ${estimado.toFixed(2)}</strong>
+        <p style="margin:0.35rem 0;">Ruta: ${escapeHTML(origen)} → ${escapeHTML(destino)} (${km} km · ${peso} kg)</p>
+        <small>Tarifa calculada en modo simulación. Coordina el monto final directo con el transportista.</small>
+      `;
+    }
+  });
+
+  document.getElementById('driverAvailabilityForm')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const status = document.getElementById('driverAvailStatus');
+    try {
+      await apiRequest('/api/transport/availability', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          disponible: document.getElementById('driverAvailableCheck').checked,
+          tarifa_base_km: Number(document.getElementById('driverTarifaKm').value) || 2.5
+        })
+      });
+      if (status) status.textContent = 'Estado actualizado correctamente.';
+      showToast('Disponibilidad de transportista guardada.');
+      loadTransportCenter();
+    } catch (error) {
+      if (status) status.textContent = error.message;
+    }
+  });
+
+  async function loadTransportCenter() {
+    if (!sessionUser) return;
+    const driverPanel = document.getElementById('driverAvailabilityPanel');
+    if (driverPanel) driverPanel.hidden = sessionUser.rol !== 'Distribuidor';
+
+    const driversBox = document.getElementById('availableDriversList');
+    if (driversBox) {
+      try {
+        const { drivers } = await apiRequest('/api/transport/drivers');
+        driversBox.innerHTML = drivers.length ? drivers.map(driver => `
+          <article class="dashboard-card">
+            <div class="dashboard-card-heading">
+              <h4>${escapeHTML(driver.nombre)}</h4>
+              <span class="status-chip">Disponible</span>
+            </div>
+            <p><strong>Vehículo:</strong> ${escapeHTML(driver.vehiculo)} ${driver.capacidad ? `(${escapeHTML(driver.capacidad)})` : ''}</p>
+            <p><strong>Zonas:</strong> ${escapeHTML(driver.zonas_servicio || 'A convenir')}</p>
+            <p><strong>Tarifa ref.:</strong> S/ ${Number(driver.tarifa_base_km || 2.5).toFixed(2)} / km</p>
+            <p><strong>Contacto:</strong> ${escapeHTML(driver.telefono)}</p>
+            ${sessionUser.rol !== 'Distribuidor' ? `<button type="button" class="btn btn-primary" data-go-publish-route>Publicar solicitud de ruta</button>` : ''}
+          </article>
+        `).join('') : '<p class="dashboard-empty">No hay transportistas libres registrados en este momento.</p>';
+      } catch (error) {
+        driversBox.innerHTML = `<p class="dashboard-empty">${escapeHTML(error.message)}</p>`;
+      }
+    }
+
+    const reqBox = document.getElementById('transportCenterRequests');
+    if (reqBox) {
+      try {
+        const { requests } = await apiRequest('/api/transport/requests');
+        reqBox.innerHTML = requests.length ? requests.map(request => {
+          const accepted = request.estado === 'aceptada';
+          const driver = sessionUser.rol === 'Distribuidor';
+          return `<article class="dashboard-card">
+            <div class="dashboard-card-heading">
+              <h4>${escapeHTML(request.carga)} · ${Number(request.cantidad)} ${escapeHTML(request.unidad)}</h4>
+              <span class="status-chip">${escapeHTML(request.estado)}</span>
+            </div>
+            <p><strong>Ruta:</strong> ${escapeHTML(request.origen)} → ${escapeHTML(request.destino)}</p>
+            ${accepted
+              ? `<p>Tarifa acordada: S/ ${Number(request.precio_acordado).toFixed(2)}</p>
+                 <button class="btn btn-outline-dark" type="button" data-open-transport-chat="${request.id}">Abrir chat grupal</button>`
+              : driver
+                ? `<form class="transport-center-accept-form" data-request-id="${request.id}">
+                     <label>Tu tarifa (S/)<input name="precio" type="number" min="0.01" step="0.01" required /></label>
+                     <button class="btn btn-primary" type="submit">Aceptar ruta</button>
+                   </form>`
+                : '<p>Esperando cotización de un transportista.</p>'}
+          </article>`;
+        }).join('') : '<p class="dashboard-empty">Aún no hay rutas publicadas.</p>';
+      } catch (error) {
+        reqBox.innerHTML = `<p class="dashboard-empty">${escapeHTML(error.message)}</p>`;
+      }
+    }
+  }
+
+  document.getElementById('tab-transport')?.addEventListener('click', async event => {
+    if (event.target.closest('[data-go-publish-route]')) {
+      cambiarPestana('tab-dashboard');
+      setTimeout(() => document.getElementById('transportOrigin')?.focus(), 150);
+    }
+    const chatBtn = event.target.closest('[data-open-transport-chat]');
+    if (chatBtn) {
+      cambiarPestana('tab-messages');
+      await loadConversations();
+      await openTransportRequestChat(chatBtn.dataset.openTransportChat);
+    }
+  });
+
+  document.getElementById('tab-transport')?.addEventListener('submit', async event => {
+    const form = event.target.closest('.transport-center-accept-form');
+    if (!form) return;
+    event.preventDefault();
+    try {
+      const requestId = form.dataset.requestId;
+      await apiRequest(`/api/transport/requests/${requestId}/accept`, {
+        method: 'POST',
+        body: JSON.stringify({ precio: Number(form.elements.precio.value) })
+      });
+      showToast('Ruta aceptada. Abriendo chat de coordinación...');
+      cambiarPestana('tab-messages');
+      await loadConversations();
+      await openTransportRequestChat(requestId);
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
 
   function updateAuthUI() {
     const loggedIn = Boolean(sessionUser);
@@ -1291,6 +1460,10 @@ document.addEventListener('DOMContentLoaded', () => {
         <button type="button" class="link-btn" id="dashboardLogout">Cerrar sesión</button>
       </article>
       ${sessionUser.rol === 'Productor' ? `
+        <section class="dashboard-section" id="farmerSubscriptionSection">
+          <h3>Mi suscripción de publicación</h3>
+          <div id="farmerSubscriptionStatus">Cargando estado de tu plan...</div>
+        </section>
         <section class="dashboard-section"><h3>Mis cosechas</h3>
           <form id="farmerProductForm" class="dashboard-form">
             <input id="productEditId" type="hidden" />
@@ -1335,10 +1508,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       if (sessionUser.rol === 'Productor') {
-        const [products, orders] = await Promise.all([
+        const [products, orders, subData] = await Promise.all([
           apiRequest('/api/my/products'),
-          apiRequest('/api/orders')
+          apiRequest('/api/orders'),
+          apiRequest('/api/my/subscription')
         ]);
+        const subBox = document.getElementById('farmerSubscriptionStatus');
+        if (subBox) {
+          if (subData.subscription) {
+            const exp = new Date(subData.subscription.expires_at).toLocaleDateString('es-PE');
+            subBox.innerHTML = `
+              <div class="dashboard-card">
+                <div class="dashboard-card-heading">
+                  <h4>${escapeHTML(subData.subscription.plan_nombre)}</h4>
+                  <span class="status-chip">Activo</span>
+                </div>
+                <p>Publicaciones usadas: <strong>${subData.activeProducts} / ${subData.subscription.max_publicaciones}</strong> · Vence el ${exp}</p>
+                <div class="dashboard-actions">
+                  <button type="button" class="btn btn-outline-dark" id="openSubModalBtn">Cambiar o ampliar plan</button>
+                </div>
+              </div>`;
+          } else {
+            subBox.innerHTML = `
+              <div class="dashboard-card">
+                <p>No tienes un plan activo. Activa un plan para publicar tus cosechas en el catálogo.</p>
+                <button type="button" class="btn btn-primary" id="openSubModalBtn">Elegir plan de suscripción</button>
+              </div>`;
+          }
+          document.getElementById('openSubModalBtn')?.addEventListener('click', () => abrirModal(subscriptionModal));
+        }
+
         availableOrders = orders.orders;
         window.myFarmerProducts = products.products;
         document.getElementById('farmerProductList').innerHTML = products.products.length
@@ -1545,6 +1744,11 @@ document.addEventListener('DOMContentLoaded', () => {
           await apiRequest(id ? `/api/my/products/${id}` : '/api/my/products', {
             method: id ? 'PATCH' : 'POST', body: JSON.stringify(product)
           });
+        } catch (err) {
+          if (err.code === 'SUBSCRIPTION_REQUIRED' || err.code === 'SUBSCRIPTION_LIMIT') {
+            abrirModal(subscriptionModal);
+          }
+          throw err;
         } finally {
           submit.disabled = false;
         }

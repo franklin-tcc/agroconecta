@@ -116,6 +116,48 @@
     </div>
   </div>
 
+  <!-- MODAL DE SUSCRIPCIÓN PARA AGRICULTORES (PUNTO A) -->
+  <div id="subscriptionModal" class="modal" aria-hidden="true">
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="subModalTitle">
+      <div class="modal-header">
+        <h3 id="subModalTitle">Planes de publicación para agricultores</h3>
+        <button type="button" class="close-modal" id="closeSubscriptionModal" aria-label="Cerrar planes">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="account-note">Elige un plan para publicar tus cosechas en el catálogo. <strong>Modo simulación activo:</strong> no se realiza ningún cobro real.</p>
+        <div class="dashboard-card-grid" style="margin-top: 1rem;">
+          <article class="dashboard-card">
+            <div class="dashboard-card-heading">
+              <h4>Plan Semilla (Prueba)</h4>
+              <span class="status-chip">S/ 0.00</span>
+            </div>
+            <p><strong>15 días</strong> · Hasta 2 cosechas activas</p>
+            <p>Ideal para probar la plataforma y recibir tus primeros pedidos.</p>
+            <button type="button" class="btn btn-outline-dark btn-block" data-subscribe-plan="semilla">Activar prueba gratis</button>
+          </article>
+          <article class="dashboard-card">
+            <div class="dashboard-card-heading">
+              <h4>Plan Cosecha Pro</h4>
+              <span class="status-chip">S/ 29.00 / mes</span>
+            </div>
+            <p><strong>30 días</strong> · Hasta 25 cosechas activas</p>
+            <p>Para productores frecuentes con variedad de productos de temporada.</p>
+            <button type="button" class="btn btn-primary btn-block" data-subscribe-plan="cosecha_pro">Simular activación</button>
+          </article>
+          <article class="dashboard-card">
+            <div class="dashboard-card-heading">
+              <h4>Plan AgroEmpresa</h4>
+              <span class="status-chip">S/ 79.00 / 90 días</span>
+            </div>
+            <p><strong>90 días</strong> · Publicaciones ilimitadas</p>
+            <p>Pensado para asociaciones agrarias y productores mayoristas.</p>
+            <button type="button" class="btn btn-outline-dark btn-block" data-subscribe-plan="agro_empresa">Simular activación</button>
+          </article>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <header class="header">
     <div class="top-bar container">
       <a href="#" class="logo nav-tab" data-tab="tab-inicio" aria-label="Ir al inicio">
@@ -246,19 +288,6 @@
         </div>
       </section>
 
-      <section id="tab-transport" class="tab-content">
-        <div class="container transport-center-page">
-          <header class="transport-center-heading">
-            <div><span class="sub-heading">Rutas y coordinación</span><h2>Centro de transporte</h2>
-              <p>Publica una necesidad, revisa solicitudes disponibles y acuerda una tarifa antes de coordinar.</p></div>
-            <span class="transport-demo-badge">Simulación · sin pagos en línea</span>
-          </header>
-          <div id="transportCenter" aria-live="polite">
-            <p class="dashboard-empty">Inicia sesión para consultar el transporte.</p>
-          </div>
-        </div>
-      </section>
-
       <section class="how-it-works container">
         <div class="section-title-row">
           <div>
@@ -373,6 +402,95 @@
       </section>
     </section>
 
+    <!-- CENTRO DE TRANSPORTE Y COTIZADOR DE FLETES (PUNTO B) -->
+    <section id="tab-transport" class="tab-content">
+      <div class="container transport-center-page">
+        <header class="transport-center-heading">
+          <div>
+            <span class="sub-heading">Rutas y coordinación</span>
+            <h2>Centro de transporte</h2>
+            <p>Calcula el costo referencial de tu ruta, revisa transportistas libres o gestiona tus envíos.</p>
+          </div>
+          <span class="transport-demo-badge">Simulación · sin pagos en línea</span>
+        </header>
+
+        <!-- Panel exclusivo para Transportistas (Disponibilidad) -->
+        <section class="dashboard-section" id="driverAvailabilityPanel" hidden>
+          <h3>Mi disponibilidad como transportista</h3>
+          <form id="driverAvailabilityForm" class="dashboard-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                  <input type="checkbox" id="driverAvailableCheck" checked />
+                  <strong>Estoy libre y disponible para recibir cargas</strong>
+                </label>
+              </div>
+              <div class="form-group">
+                <label for="driverTarifaKm">Tarifa base referencial por km (S/)</label>
+                <input id="driverTarifaKm" type="number" min="0.5" step="0.1" value="2.50" required />
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Guardar estado</button>
+            <p class="account-status" id="driverAvailStatus" role="status"></p>
+          </form>
+        </section>
+
+        <!-- Cotizador de flete estimado -->
+        <section class="dashboard-section">
+          <h3>Cotizador rápido de flete</h3>
+          <form id="transportQuoteForm" class="dashboard-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="quoteOrigin">Origen (distrito o comunidad)</label>
+                <input id="quoteOrigin" type="text" placeholder="Ej: Urubamba, Cusco" required />
+              </div>
+              <div class="form-group">
+                <label for="quoteDestination">Destino de entrega</label>
+                <input id="quoteDestination" type="text" placeholder="Ej: Wanchaq, Cusco" required />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="quoteDistance">Distancia aproximada (km)</label>
+                <input id="quoteDistance" type="number" min="1" max="3000" value="45" required />
+              </div>
+              <div class="form-group">
+                <label for="quoteWeight">Peso estimado de la carga (kg)</label>
+                <input id="quoteWeight" type="number" min="1" max="50000" value="300" required />
+              </div>
+              <div class="form-group">
+                <label for="quoteVehicleType">Tipo de unidad</label>
+                <select id="quoteVehicleType">
+                  <option value="camioneta">Camioneta rural (hasta 1t)</option>
+                  <option value="camion3t">Camión mediano (3t)</option>
+                  <option value="furgon">Furgón cerrado</option>
+                  <option value="camion10t">Camión pesado (10t+)</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Calcular tarifa estimada</button>
+          </form>
+          <div id="quoteResultBox" class="dashboard-card" style="margin-top:1rem;" hidden></div>
+        </section>
+
+        <!-- Transportistas libres disponibles -->
+        <section class="dashboard-section">
+          <h3>Transportistas libres disponibles</h3>
+          <div id="availableDriversList" class="dashboard-card-grid">
+            <p class="dashboard-empty">Inicia sesión para ver los transportistas disponibles.</p>
+          </div>
+        </section>
+
+        <!-- Solicitudes de transporte -->
+        <section class="dashboard-section">
+          <h3>Solicitudes y rutas publicadas</h3>
+          <div id="transportCenterRequests" class="dashboard-card-grid">
+            <p class="dashboard-empty">Inicia sesión para consultar las rutas.</p>
+          </div>
+        </section>
+      </div>
+    </section>
+
     <section id="tab-catalogo" class="tab-content">
       <div class="container catalog-layout">
         <aside class="sidebar-filters">
@@ -412,6 +530,13 @@
           </div>
 
           <button class="btn btn-primary btn-block" id="applyFiltersBtn" type="button">Aplicar filtros</button>
+
+          <!-- Acceso rápido al cotizador de transporte (PUNTO C) -->
+          <div class="filter-group" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+            <h4>¿Necesitas flete?</h4>
+            <p style="font-size: 0.85rem; color: #52525b; margin-bottom: 0.6rem;">Calcula cuánto costaría llevar tu pedido o contacta un transportista libre.</p>
+            <button type="button" class="btn btn-outline-dark btn-block" id="openTransportCalculatorBtn">Cotizar transporte</button>
+          </div>
         </aside>
 
         <div class="catalog-results">
@@ -694,6 +819,27 @@
           <div class="form-card farmer-embed-card" id="farmerRegistrationPanel" hidden>
             <h2>Registro de agricultor</h2>
             <p class="form-sub">Completa las tres fases del formulario agrícola aquí mismo; el registro permanece en esta sección.</p>
+
+            <!-- Planes de suscripción para agricultores (PUNTO C) -->
+            <div style="margin: 1rem 0 1.25rem; padding: 1rem; border-radius: 12px; background: #f8faf8; border: 1px solid #d1e7dd;">
+              <h3 style="margin: 0 0 0.35rem; font-size: 1.05rem;">Planes para publicar tus cosechas (Modo simulación)</h3>
+              <p style="margin: 0 0 0.85rem; font-size: 0.9rem; color: #3f3f46;">Crea tu cuenta gratis abajo y activa cualquiera de estos planes desde tu panel sin costo real:</p>
+              <div class="dashboard-card-grid">
+                <article class="dashboard-card">
+                  <div class="dashboard-card-heading"><h4>Semilla (Prueba)</h4><span class="status-chip">S/ 0 · 15 días</span></div>
+                  <p>Hasta 2 cosechas activas en catálogo.</p>
+                </article>
+                <article class="dashboard-card">
+                  <div class="dashboard-card-heading"><h4>Cosecha Pro</h4><span class="status-chip">S/ 29 · 30 días</span></div>
+                  <p>Hasta 25 cosechas activas y prioridad en búsquedas.</p>
+                </article>
+                <article class="dashboard-card">
+                  <div class="dashboard-card-heading"><h4>AgroEmpresa</h4><span class="status-chip">S/ 79 · 90 días</span></div>
+                  <p>Publicaciones ilimitadas para asociaciones y mayoristas.</p>
+                </article>
+              </div>
+            </div>
+
             <iframe id="farmerRegistrationFrame" src="menu.html?embedded=1" title="Registro de agricultor en tres fases" loading="lazy"></iframe>
           </div>
           <div class="registration-trust" id="registrationTrust">
